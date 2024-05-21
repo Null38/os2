@@ -3,6 +3,7 @@
 #include <mutex>
 #include <windows.h>
 #include <string>
+#include <regex>
 #include <vector>
 
 using namespace std;
@@ -41,7 +42,7 @@ int main(int argc, char* argv[])
 	//stack top이란?..
 	//shell과 monitor프로세스 추가해야함.
 
-	char** p = parse(" test   12  34 ");
+	char** p = parse(" test ads ;  &12  34 ");
 
 	return 0;
 }
@@ -49,29 +50,34 @@ int main(int argc, char* argv[])
 
 char** parse(const char* command)
 {
+	char* cmdPointer = (char*)command;
 	vector<string> split;
 
-	int startAt = 0;
-	for (unsigned int i = 0; command[i] != '\0'; i++)
+	const int regSize = 3;
+	regex reg[regSize] = { regex("(^\\s+)"), regex("^[^\\w\\d\\s]"), regex("^\\w+") };
+
+	while (*cmdPointer != '\0')
 	{
-		if (command[startAt] == ' ')
+		int i;
+		cmatch match;
+		for (i = 0; i < regSize; i++)
 		{
-			startAt++;
-			continue;
+			if (regex_search((const char*)cmdPointer, (const char*)(cmdPointer + strlen(cmdPointer)), match, reg[i]))
+				break;
 		}
-		if (command[i] != ' ')
-			continue;
 
-		split.push_back(((string)command).substr(startAt, i - startAt));
-		startAt = i + 1;
-	}
+		switch (i)
+		{
+		case 0:
+			break;
+		default:
+			split.push_back(match[0].str());
+			break;
+		}
 
-	if (startAt < ((string)command).length())
-	{
-		split.push_back(((string)command).substr(startAt));
+		cmdPointer += match[0].str().length();
 	}
 	split.push_back("");
-
 
 	char** result = (char**)malloc(sizeof(char*) * (split.size()));
 	if (result == NULL)
