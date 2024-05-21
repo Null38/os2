@@ -53,8 +53,8 @@ char** parse(const char* command)
 	char* cmdPointer = (char*)command;
 	vector<string> split;
 
-	const int regSize = 3;
-	regex reg[regSize] = { regex("(^\\s+)"), regex("^[^\\w\\d\\s]"), regex("^\\w+") };
+	const int regSize = 4;
+	regex reg[regSize] = { regex("(^\\s+)"), regex("^[^\\w\\d\\s]"), regex("^\\w+") , regex("^.")};
 
 	while (*cmdPointer != '\0')
 	{
