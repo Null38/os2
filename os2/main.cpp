@@ -134,7 +134,7 @@ struct ProcNode
 {
 	void (*func)();
 	processType type = processType::Foreground;
-	int args[2] = {0, 0};
+	string args[2];
 	int leftTime;
 	int period;
 	int leftWait;
@@ -229,6 +229,9 @@ int main(int argc, char* argv[])
 	//enqueue(monitor, Background);
 
 	char** p = parse(" test ads ;  &12  34 ");
+
+	void (*test)(int, int) = (void(*)(int, int))prime;
+	test(1, 1);
 
 	return 0;
 }
@@ -342,7 +345,7 @@ void gcd(int x, int y)
 void prime(int x)
 {
 	printMtx.lock();
-
+	
 	printMtx.unlock();
 }
 
@@ -401,6 +404,7 @@ void exec(char** args)
 {
 	char** reader = args;
 	processType type = processType::Foreground;
+	processList command = processList::dummy;
 	int n = 1;
 	int d = DONE;
 	int p = -1;
@@ -413,27 +417,50 @@ void exec(char** args)
 		}
 		else if (strcmp(*reader, "-"))
 		{
+			free(*reader);
+			reader++;
 
+			int* to;
+			if (strcmp(*reader, "n"))
+			{
+				to = &n;
+			}
+			else if (strcmp(*reader, "d"))
+			{
+				to = &d;
+			}
+			else if (strcmp(*reader, "p"))
+			{
+				to = &p;
+			}
+			else if (strcmp(*reader, "m"))
+			{
+				to = &m;
+			}
+			free(*reader);
+			reader++;
+
+			*to = stoi(*reader);
 		}
-		else if (strcmp(*reader, ""))
+		else if (strcmp(*reader, "echo"))
 		{
-
+			processList command = processList::echo;
 		}
-		else if (strcmp(*reader, ""))
+		else if (strcmp(*reader, "dummy"))
 		{
-
+			processList command = processList::dummy;
 		}
-		else if (strcmp(*reader, ""))
+		else if (strcmp(*reader, "prime"))
 		{
-
+			processList command = processList::prime;
 		}
-		else if (strcmp(*reader, ""))
+		else if (strcmp(*reader, "sum"))
 		{
-
+			processList command = processList::sum;
 		}
 		else if (strcmp(*reader, ";"))
 		{
-			//make(n, d, p, m);
+			//make(command, n, d, p, m);
 			type = processType::Foreground;
 			n = 1;
 			d = DONE;
@@ -445,7 +472,7 @@ void exec(char** args)
 	}
 }
 
-//void make(int n, int d, int p, int m)
+//void make(processType proc, int n, int d, int p, int m)
 //{
 //
 //}
