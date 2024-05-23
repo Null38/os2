@@ -15,9 +15,12 @@
 using namespace std;
 
 
+#define Y 3
+#define DONE 200
+
 enum class processList
 {
-	shell, monitor
+	shell, monitor, echo, dummy, gcd, prime, sum
 };
 
 enum class processType
@@ -35,7 +38,15 @@ void enqueue(processList);
 void dequeue(StakNode*);
 void promote();
 void split_n_merge(StakNode*);
+void shell();
+void monitor();
+void echo(string);
+void dummy();
+void gcd(int, int);
+void prime(int);
+void sum(int, int);
 char** parse(const char*);
+void exec(char**);
 
 class StakNode
 {
@@ -121,8 +132,12 @@ StakNode* StakNode::NextNode()
 #pragma region ProcNode
 struct ProcNode
 {
-	//쓰레드를 가지고 있어야할듯 아마 thread proc;
+	void (*func)();
 	processType type = processType::Foreground;
+	int args[2] = {0, 0};
+	int leftTime;
+	int period;
+	int leftWait;
 	ProcNode* next = nullptr;
 };
 
@@ -202,7 +217,7 @@ ProcNode* ProcList::Remove(int size)
 #pragma endregion ProcNode
 
 
-
+mutex printMtx;
 
 StakNode* stakBottom = new StakNode(nullptr);
 StakNode* stakTop = stakBottom;
@@ -290,6 +305,55 @@ void split_n_merge(StakNode* stak)
 	split_n_merge(stak);
 }
 
+void shell()
+{
+	while (true)
+	{
+
+	}
+}
+
+void monitor()
+{
+	while (true)
+	{
+		printMtx.lock();
+
+		printMtx.unlock();
+	}
+}
+
+void echo(string output)
+{
+	printMtx.lock();
+	cout << output << endl;
+	printMtx.unlock();
+}
+
+void dummy(){}
+
+void gcd(int x, int y)
+{
+	printMtx.lock();
+
+	printMtx.unlock();
+}
+
+void prime(int x)
+{
+	printMtx.lock();
+
+	printMtx.unlock();
+}
+
+void sum(int x, int m)
+{
+	printMtx.lock();
+
+	printMtx.unlock();
+}
+
+
 char** parse(const char* command)
 {
 	char* cmdPointer = (char*)command;
@@ -332,3 +396,56 @@ char** parse(const char* command)
 
 	return result;
 }
+
+void exec(char** args)
+{
+	char** reader = args;
+	processType type = processType::Foreground;
+	int n = 1;
+	int d = DONE;
+	int p = -1;
+	int m = 1;
+	while (strcmp(*reader, ""))
+	{
+		if (strcmp(*reader, "&"))
+		{
+			type = processType::Background;
+		}
+		else if (strcmp(*reader, "-"))
+		{
+
+		}
+		else if (strcmp(*reader, ""))
+		{
+
+		}
+		else if (strcmp(*reader, ""))
+		{
+
+		}
+		else if (strcmp(*reader, ""))
+		{
+
+		}
+		else if (strcmp(*reader, ""))
+		{
+
+		}
+		else if (strcmp(*reader, ";"))
+		{
+			//make(n, d, p, m);
+			type = processType::Foreground;
+			n = 1;
+			d = DONE;
+			p = -1;
+			m = 1;
+		}
+		free(*reader);
+		reader++;
+	}
+}
+
+//void make(int n, int d, int p, int m)
+//{
+//
+//}
