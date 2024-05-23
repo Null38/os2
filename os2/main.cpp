@@ -30,8 +30,8 @@ class ProcList;
 struct ProcNode;
 
 //이 함수들 void인거 나중에 바꿀 수 있다는점 인지하기.
-void enqueue(processList*, processType);
-void enqueue(processList*);
+void enqueue(processList, processType);
+void enqueue(processList);
 void dequeue(StakNode*);
 void promote();
 void split_n_merge(StakNode*);
@@ -40,20 +40,20 @@ char** parse(const char*);
 class StakNode
 {
 public:
-	StakNode();
-	StakNode(struct ProcNode*);
+	StakNode(StakNode*);
 	~StakNode();
 
 	static int Count();
 	ProcList* procList();
-	//캡슐화를 위해 밑에 변수들을 프라이빗으로 바꾸고 get만들어야한다.
-	//필요한 함수는? Add Remove
+
+	StakNode* NextNode();
+
 private:
 	static int nodeSize;
 
 	ProcList* _procList;
 
-	StakNode* prev = nullptr;
+	StakNode* prev;
 	StakNode* next = nullptr;
 };
 int StakNode::nodeSize = 0;
@@ -62,14 +62,14 @@ class ProcList
 {
 public:
 	ProcList(StakNode*);
-	ProcList(StakNode*, ProcNode*);
 	~ProcList();
 
 	static int ProcCount();
 	int nodeCount();
 
-	//캡슐화 하기
-	//필요한 함수는? Add Remove split. split은 일정 크기 자르고 주소값 리턴하자. 이를 위해 ProcNode를 받는 생성자를 추가해야할듯
+	void Add(ProcNode*);
+	ProcNode* Remove();
+	ProcNode* Remove(int);
 
 
 private:
@@ -83,18 +83,22 @@ int ProcList::procCount = 0;
 
 #pragma region StakNode
 
-StakNode::StakNode()
+StakNode::StakNode(StakNode* prev)
 {
 	_procList = new ProcList(this);
+	this->prev = prev;
+	if(prev != nullptr) prev->next = this;
 	nodeSize++;
 }
 
-StakNode::StakNode(struct ProcNode* newStart)
+StakNode::~StakNode()
 {
-	_procList = new ProcList(this, newStart);
-	nodeSize++;
+	if (prev != nullptr) prev->next = next;
+	next->prev = prev;
+	nodeSize--;
+	
+	delete _procList;
 }
-
 
 int StakNode::Count()
 {
@@ -107,10 +111,9 @@ ProcList* StakNode::procList()
 	return _procList;
 }
 
-StakNode::~StakNode()
+StakNode* StakNode::NextNode()
 {
-	nodeSize--;
-	delete _procList;
+	return next;
 }
 
 #pragma endregion StakNode
@@ -119,6 +122,7 @@ StakNode::~StakNode()
 struct ProcNode
 {
 	//쓰레드를 가지고 있어야할듯 아마 thread proc;
+	processType type = processType::Foreground;
 	ProcNode* next = nullptr;
 };
 
@@ -131,17 +135,19 @@ ProcList::ProcList(StakNode* parent)
 
 }
 
-ProcList::ProcList(StakNode* parent, ProcNode* newNode)
-{
-	this->parent = parent;
-	start = newNode;
-	for (end = start; end->next != nullptr; end = end->next)
-	{
-		_nodeCount++;
-	}
-	_nodeCount++;
-
-}
+//ProcList::ProcList(StakNode* parent, ProcNode* newNode)
+//{
+//	this->parent = parent;
+//	start = newNode;
+//
+//	_nodeCount = 0;
+//	for (end = start; end->next != nullptr; end = end->next)
+//	{
+//		_nodeCount++;
+//	}
+//	_nodeCount++;
+//
+//}
 
 ProcList::~ProcList()
 {
@@ -157,12 +163,48 @@ int ProcList::nodeCount()
 	return _nodeCount;
 }
 
+void ProcList::Add(ProcNode* newNode)
+{
+	end->next = newNode;
+	_nodeCount++;
+
+	for (; end->next != nullptr; end = end->next)
+	{
+		_nodeCount++;
+	}
+}
+
+ProcNode* ProcList::Remove()
+{
+	ProcNode* removed = start;
+	start = start->next;
+	_nodeCount--;
+	removed->next = nullptr;
+
+	return removed;
+}
+
+
+ProcNode* ProcList::Remove(int size)
+{
+	ProcNode* removed = start;
+	for (int i = 0; i < size - 1; i++)
+	{
+		start = start->next;
+		_nodeCount--;
+	}
+	ProcNode* end = start;
+	start = start->next;
+	end->next = nullptr;
+
+	return removed;
+}
 #pragma endregion ProcNode
 
 
 
 
-StakNode* stakBottom = new StakNode();
+StakNode* stakBottom = new StakNode(nullptr);
 StakNode* stakTop = stakBottom;
 StakNode* P = stakBottom;
 
@@ -176,55 +218,76 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
-void enqueue(processList* proc, processType type)
+void enqueue(processList proc, processType type)
 {
-	StakNode addTo;
+	StakNode* addTo;
 
 	if (type == processType::Foreground)
 	{
-		addTo = *stakTop;
+		addTo = stakTop;
 	}
 	else
 	{
-		addTo = *stakBottom;
+		addTo = stakBottom;
 	}
 
-	//addTo.procList().Add(proc);
+	//addTo->procList()->Add(proc);
 
 	promote();
+	split_n_merge(addTo);
 }
 
-void enqueue(processList* proc)
+void enqueue(processList proc)
 {
 	enqueue(proc, processType::Foreground);
-	//split_n_merge(proc추가한 Node);
 }
 
 void dequeue(StakNode* stak)
 {
-	//if(procIsEnd) proc.RemoveProc(); -> in RemoveProc() if (procList == nullptr) Remove()
+	ProcNode* deNode = stak->procList()->Remove();
+
+	//if(procIsEnd) delete deNode;
+
+	if (stak->procList()->nodeCount() == 0)
+	{
+		if (stak == stakBottom)
+			stakBottom = stakBottom->NextNode();
+
+		delete stak;
+	}
 
 	promote();
 }
 
 void promote()
 {
-	//P가 따로 존재.
-	//P가 stakTop일경우 다음 스택노드는 bottom으로.
-	//꼬리에 붙여라. 인자넣어도 되겠지 뭐
+	ProcNode* pNode =  P->procList()->Remove();
 
-	//split_n_merge(proc추가한 Node);
+	if ((P = P->NextNode()) == nullptr)
+		P = stakBottom;
+	P->procList()->Add(pNode);
+
+	split_n_merge(P);
 }
 
 void split_n_merge(StakNode* stak)
 {
 	int threshold = ProcList::ProcCount() / StakNode::Count();
-	if(stak->procList()->nodeCount() <= threshold)
+	int count;
+	if((count = stak->procList()->nodeCount()) <= threshold)
 		return;
-	//절반을 자른다.. RemoveProc()에 몇개를 자를지 설정할 수 있는 오버로딩을 추가하는게 좋을듯. 구현한다면...
-	//만약 my == StakTop? stak.Add();
 
-	//split_n_merge(proc추가한 Node);
+	ProcNode* moveNode = stak->procList()->Remove(count / 2);
+	
+	if ((stak = stak->NextNode()) == nullptr)
+	{
+		stakTop = new StakNode(stakTop);
+		stak = stakTop;
+	}
+
+	stak->procList()->Add(moveNode);
+
+	split_n_merge(stak);
 }
 
 char** parse(const char* command)
