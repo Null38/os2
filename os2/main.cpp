@@ -81,6 +81,7 @@ public:
 	void Add(ProcNode*);
 	ProcNode* Remove();
 	ProcNode* Remove(int);
+	//void Instert(ProcNode*)
 
 
 private:
@@ -141,37 +142,9 @@ struct ProcNode
 	int leftWait = 0;
 	ProcNode* next = nullptr;
 
-	ProcNode(int id, processList proc, processType type, int d, int p)
+	ProcNode(int id)
 	{
 		this->id = id;
-
-		switch (proc)
-		{
-		case processList::shell:
-			func = shell;
-			break;
-		case processList::monitor:
-			func = monitor;
-			break;
-		case processList::echo:
-			func = (void(*)())echo;
-			break;
-		case processList::gcd:
-			func = (void(*)())gcd;
-			break;
-		case processList::prime:
-			func = (void(*)())prime;
-			break;
-		case processList::sum:
-			func = (void(*)())sum;
-			break;
-		default:
-			break;
-		}
-
-		this->type = type;
-		leftTime = d;
-		period = p;
 	}
 };
 
@@ -202,8 +175,14 @@ int ProcList::nodeCount()
 
 void ProcList::Add(ProcNode* newNode)
 {
-	end->next = newNode;
+	if (end != nullptr)
+		end->next = newNode;
+	else
+		start = newNode;
+	end = newNode;
+
 	_nodeCount++;
+	procCount++;
 
 	for (; end->next != nullptr; end = end->next)
 	{
@@ -215,7 +194,10 @@ ProcNode* ProcList::Remove()
 {
 	ProcNode* removed = start;
 	start = start->next;
+	if (start == nullptr)
+		end = nullptr;
 	_nodeCount--;
+	procCount--;
 	removed->next = nullptr;
 
 	return removed;
@@ -229,10 +211,15 @@ ProcNode* ProcList::Remove(int size)
 	{
 		start = start->next;
 		_nodeCount--;
+		procCount--;
 	}
 	ProcNode* end = start;
-	start = start->next;
-	end->next = nullptr;
+	if (start != nullptr)
+		start = start->next;
+	if (start == nullptr)
+		this->end = nullptr;
+	if (end == nullptr)
+		end->next = nullptr;
 
 	return removed;
 }
@@ -253,7 +240,8 @@ int main(int argc, char* argv[])
 	//enqueue(shell, Foreground);
 	//enqueue(monitor, Background);
 
-	char** p = parse(" test ads ;  &12  34 ");
+
+	char** p = parse(" echo ads -n 2 ;  &12  34 ");
 	exec(p);
 
 	return 0;
@@ -448,7 +436,10 @@ void exec(char** args)
 
 void make(vector<string> args)
 {
-	//ProcNode* newProc = new ProcNode(proc, type, d, p);
+	processType type = processType::Foreground;
+	if (args[0].compare("&") == 0)
+		type = processType::Background;
+
 	map<string, processList> procMap = { 
 		{"echo", processList::echo},
 		{"dummy", processList::dummy},
@@ -456,21 +447,83 @@ void make(vector<string> args)
 		{"prime", processList::prime},
 		{"sum", processList::sum}
 	};
-	auto find = procMap.find(args[0]);
+	auto find = procMap.find(args[type == processType::Foreground ? 0 : 1 ]);
 
 	if (find == procMap.end())
 		return;
 
 	processList proc =	find->second;
 
-	for (int i = 1; i < args.size(); i++)
-	{
+	int n = 1, d = DONE, p = -1, m = 1;
 
+	map<string, int*> optionMap = {
+		{"n", &n},
+		{"d", &d},
+		{"p", &p},
+		{"m", &m}
+	};
+	int* modif = nullptr;
+	bool doModif = false;
+	vector<string> _args;
+
+	for (int i = (type == processType::Foreground ? 1 : 2); i < args.size(); i++)
+	{
+		if (args[i].compare("-") == 0)
+		{
+			doModif = true;
+		}
+		else if (modif != nullptr)
+		{
+			*modif = stoi(args[i]);
+			modif = nullptr;
+		}
+		else if (doModif)
+		{
+			auto option = optionMap.find(args[i]);
+
+			if (option == optionMap.end())
+				return;
+
+			modif = option->second;
+		}
+		else
+			_args.push_back(args[i]);
 	}
+	if (proc == processList::sum)
+		_args.push_back(to_string(m));
 
-	for (int i = 0; i < 0/*n*/; i++)
+	for (int i = 0; i < n; i++)
 	{
-		//enqueue();
+		ProcNode* newProc = new ProcNode(id++);
+
+		newProc->type = type;
+
+		switch (proc)
+		{
+		case processList::echo:
+			newProc->func = (void(*)())echo;
+			break;
+		case processList::dummy:
+			newProc->func = nullptr;
+			break;
+		case processList::gcd:
+			newProc->func = (void(*)())gcd;
+			break;
+		case processList::prime:
+			newProc->func = (void(*)())prime;
+			break;
+		case processList::sum:
+			newProc->func = (void(*)())sum;
+			break;
+		default:
+			break;
+		}
+		newProc->leftTime = d;
+		newProc->period = p;
+
+		newProc->args = _args;
+
+		enqueue(newProc);
 	}
 
 }
