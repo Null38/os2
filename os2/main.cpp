@@ -11,6 +11,7 @@
 #include <string>
 #include <regex>
 #include <vector>
+#include <map> 
 
 using namespace std;
 
@@ -32,7 +33,6 @@ class StakNode;
 class ProcList;
 struct ProcNode;
 
-//이 함수들 void인거 나중에 바꿀 수 있다는점 인지하기.
 void enqueue(processList, processType);
 void enqueue(processList);
 void dequeue(StakNode*);
@@ -41,12 +41,12 @@ void split_n_merge(StakNode*);
 void shell();
 void monitor();
 void echo(string);
-void dummy();
-void gcd(int, int);
-void prime(int);
-void sum(int, int);
+void gcd(string, string);
+void prime(string);
+void sum(string, string);
 char** parse(const char*);
 void exec(char**);
+void make(vector<string>);
 
 class StakNode
 {
@@ -132,14 +132,49 @@ StakNode* StakNode::NextNode()
 #pragma region ProcNode
 struct ProcNode
 {
-	void (*func)();
+	int id;
+	void (*func)() = nullptr;
 	processType type = processType::Foreground;
-	string args[2];
-	int leftTime;
-	int period;
-	int leftWait;
+	vector<string> args;
+	int leftTime = DONE;
+	int period = -1;
+	int leftWait = 0;
 	ProcNode* next = nullptr;
+
+	ProcNode(int id, processList proc, processType type, int d, int p)
+	{
+		this->id = id;
+
+		switch (proc)
+		{
+		case processList::shell:
+			func = shell;
+			break;
+		case processList::monitor:
+			func = monitor;
+			break;
+		case processList::echo:
+			func = (void(*)())echo;
+			break;
+		case processList::gcd:
+			func = (void(*)())gcd;
+			break;
+		case processList::prime:
+			func = (void(*)())prime;
+			break;
+		case processList::sum:
+			func = (void(*)())sum;
+			break;
+		default:
+			break;
+		}
+
+		this->type = type;
+		leftTime = d;
+		period = p;
+	}
 };
+
 
 ProcList::ProcList(StakNode* parent)
 {
@@ -150,22 +185,9 @@ ProcList::ProcList(StakNode* parent)
 
 }
 
-//ProcList::ProcList(StakNode* parent, ProcNode* newNode)
-//{
-//	this->parent = parent;
-//	start = newNode;
-//
-//	_nodeCount = 0;
-//	for (end = start; end->next != nullptr; end = end->next)
-//	{
-//		_nodeCount++;
-//	}
-//	_nodeCount++;
-//
-//}
-
 ProcList::~ProcList()
 {
+	_nodeCount--;
 }
 	
 int ProcList::ProcCount()
@@ -219,9 +241,12 @@ ProcNode* ProcList::Remove(int size)
 
 mutex printMtx;
 
+int id = 0;
+
 StakNode* stakBottom = new StakNode(nullptr);
 StakNode* stakTop = stakBottom;
 StakNode* P = stakBottom;
+ProcList WQ = ProcList(nullptr);
 
 int main(int argc, char* argv[])
 {
@@ -229,18 +254,16 @@ int main(int argc, char* argv[])
 	//enqueue(monitor, Background);
 
 	char** p = parse(" test ads ;  &12  34 ");
-
-	void (*test)(int, int) = (void(*)(int, int))prime;
-	test(1, 1);
+	exec(p);
 
 	return 0;
 }
 
-void enqueue(processList proc, processType type)
+void enqueue(ProcNode* node)
 {
 	StakNode* addTo;
 
-	if (type == processType::Foreground)
+	if (node->type == processType::Foreground)
 	{
 		addTo = stakTop;
 	}
@@ -249,22 +272,17 @@ void enqueue(processList proc, processType type)
 		addTo = stakBottom;
 	}
 
-	//addTo->procList()->Add(proc);
+	addTo->procList()->Add(node);
 
 	promote();
 	split_n_merge(addTo);
-}
-
-void enqueue(processList proc)
-{
-	enqueue(proc, processType::Foreground);
 }
 
 void dequeue(StakNode* stak)
 {
 	ProcNode* deNode = stak->procList()->Remove();
 
-	//if(procIsEnd) delete deNode;
+	if(deNode->leftTime <= 0) delete deNode;
 
 	if (stak->procList()->nodeCount() == 0)
 	{
@@ -333,23 +351,21 @@ void echo(string output)
 	printMtx.unlock();
 }
 
-void dummy(){}
-
-void gcd(int x, int y)
+void gcd(string x, string y)
 {
 	printMtx.lock();
 
 	printMtx.unlock();
 }
 
-void prime(int x)
+void prime(string x)
 {
 	printMtx.lock();
 	
 	printMtx.unlock();
 }
 
-void sum(int x, int m)
+void sum(string x, string m)
 {
 	printMtx.lock();
 
@@ -402,77 +418,59 @@ char** parse(const char* command)
 
 void exec(char** args)
 {
-	char** reader = args;
-	processType type = processType::Foreground;
-	processList command = processList::dummy;
-	int n = 1;
-	int d = DONE;
-	int p = -1;
-	int m = 1;
-	while (strcmp(*reader, ""))
+	char** reader = args; 
+	vector<string> command;
+	while (strcmp(*reader, "") != 0)
 	{
-		if (strcmp(*reader, "&"))
+		if (strcmp(*reader, ";") == 0)
 		{
-			type = processType::Background;
+			make(command); 
+			command.clear();
 		}
-		else if (strcmp(*reader, "-"))
+		else
 		{
-			free(*reader);
-			reader++;
+			command.push_back(string(*reader));
+		}
 
-			int* to;
-			if (strcmp(*reader, "n"))
-			{
-				to = &n;
-			}
-			else if (strcmp(*reader, "d"))
-			{
-				to = &d;
-			}
-			else if (strcmp(*reader, "p"))
-			{
-				to = &p;
-			}
-			else if (strcmp(*reader, "m"))
-			{
-				to = &m;
-			}
-			free(*reader);
-			reader++;
-
-			*to = stoi(*reader);
-		}
-		else if (strcmp(*reader, "echo"))
-		{
-			processList command = processList::echo;
-		}
-		else if (strcmp(*reader, "dummy"))
-		{
-			processList command = processList::dummy;
-		}
-		else if (strcmp(*reader, "prime"))
-		{
-			processList command = processList::prime;
-		}
-		else if (strcmp(*reader, "sum"))
-		{
-			processList command = processList::sum;
-		}
-		else if (strcmp(*reader, ";"))
-		{
-			//make(command, n, d, p, m);
-			type = processType::Foreground;
-			n = 1;
-			d = DONE;
-			p = -1;
-			m = 1;
-		}
 		free(*reader);
 		reader++;
 	}
+
+	if (command.size())
+	{
+		make(command);
+	}
+
+	free(*reader);
+
+	free(args);
 }
 
-//void make(processType proc, int n, int d, int p, int m)
-//{
-//
-//}
+void make(vector<string> args)
+{
+	//ProcNode* newProc = new ProcNode(proc, type, d, p);
+	map<string, processList> procMap = { 
+		{"echo", processList::echo},
+		{"dummy", processList::dummy},
+		{"gcd", processList::gcd},
+		{"prime", processList::prime},
+		{"sum", processList::sum}
+	};
+	auto find = procMap.find(args[0]);
+
+	if (find == procMap.end())
+		return;
+
+	processList proc =	find->second;
+
+	for (int i = 1; i < args.size(); i++)
+	{
+
+	}
+
+	for (int i = 0; i < 0/*n*/; i++)
+	{
+		//enqueue();
+	}
+
+}
