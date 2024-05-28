@@ -44,6 +44,7 @@ void echo(string);
 void gcd(string, string);
 void prime(string);
 void sum(string, string);
+void sumTh(int, int, int*);
 char** parse(const char*);
 void exec(char**);
 void make(vector<string>);
@@ -99,14 +100,20 @@ StakNode::StakNode(StakNode* prev)
 {
 	_procList = new ProcList(this);
 	this->prev = prev;
-	if(prev != nullptr) prev->next = this;
+	if (prev != nullptr)
+	{
+		this->next = prev->next;
+		prev->next = this;
+	}
+	if (this->next != nullptr)
+		this->next->prev = this;
 	nodeSize++;
 }
 
 StakNode::~StakNode()
 {
 	if (prev != nullptr) prev->next = next;
-	next->prev = prev;
+	if (next != nullptr) next->prev = prev;
 	nodeSize--;
 	
 	delete _procList;
@@ -216,9 +223,9 @@ ProcNode* ProcList::Remove(int size)
 	ProcNode* end = start;
 	if (start != nullptr)
 		start = start->next;
-	if (start == nullptr)
+	else
 		this->end = nullptr;
-	if (end == nullptr)
+	if (end != nullptr)
 		end->next = nullptr;
 
 	return removed;
@@ -244,6 +251,10 @@ int main(int argc, char* argv[])
 	char** p = parse(" echo ads -n 2 ;  &12  34 ");
 	exec(p);
 
+	prime("97");
+
+	sum("100", "3");
+
 	return 0;
 }
 
@@ -262,8 +273,8 @@ void enqueue(ProcNode* node)
 
 	addTo->procList()->Add(node);
 
-	promote();
 	split_n_merge(addTo);
+	promote();
 }
 
 void dequeue(StakNode* stak)
@@ -286,10 +297,26 @@ void dequeue(StakNode* stak)
 void promote()
 {
 	ProcNode* pNode =  P->procList()->Remove();
+	StakNode* check = P;
+
+	if ((P = P->NextNode()) == nullptr)
+	{
+		P = new StakNode(stakTop);
+		stakTop = P;
+	}
+
+	P->procList()->Add(pNode);
+
+	if (check->procList()->nodeCount() == 0)
+	{
+		if (check == stakBottom)
+			stakBottom = stakBottom->NextNode();
+
+		delete check;
+	}
 
 	if ((P = P->NextNode()) == nullptr)
 		P = stakBottom;
-	P->procList()->Add(pNode);
 
 	split_n_merge(P);
 }
@@ -341,24 +368,106 @@ void echo(string output)
 
 void gcd(string x, string y)
 {
-	printMtx.lock();
+	int a = stoi(x), b = stoi(y), result;
+	if (a < b)
+	{
+		result = a;
+		a = b;
+		b = result;
+	}
 
+	while (true)
+	{
+		int r = a % b;
+		if (r == 0) {
+			result = b;
+			break;
+		}
+		a = b;
+		b = r;
+	}
+
+
+	printMtx.lock();
+	cout << result << endl;
 	printMtx.unlock();
 }
 
 void prime(string x)
 {
+	int _x = stoi(x);
+
+	if (_x < 2)
+	{
+		printMtx.lock();
+		cout << 0 << endl;
+		printMtx.unlock();
+		return;
+	}
+
+	vector<int> primes = {2};
+
+	for (int i = 3; i <= _x; i++)
+	{
+		bool check = true;
+		for (int j = 0; j < primes.size(); j++)
+		{
+			if (i % primes[j] == 0)
+			{
+				check = false;
+				break;
+			}
+		}
+
+		if (check)
+			primes.push_back(i);
+	}
+
 	printMtx.lock();
-	
+	cout << primes.size() << endl;
 	printMtx.unlock();
 }
+
+mutex sumMtx;
 
 void sum(string x, string m)
 {
-	printMtx.lock();
+	int _x = stoi(x), _m = stoi(m);
 
+	vector<thread*> sumThread;
+	int result = _x;
+
+	for (int i = 0; i < _m; i++)
+	{
+		int end = (i + 1 == _m) ? _x : (_x / _m) * (i + 1);
+		sumThread.push_back(new thread(sumTh, (_x / _m) * i, end, &result));
+	}
+
+	for (int i = 0; i < sumThread.size(); i++)
+	{
+		sumThread[i]->join();
+	}
+
+	printMtx.lock();
+	cout << result << endl;
 	printMtx.unlock();
 }
+
+void sumTh(int start, int end, int* result)
+{
+	int value = 0;
+
+	for (int i = start; i < end; i++)
+	{
+		value += i;
+	}
+
+	sumMtx.lock();
+	*result += value;
+	sumMtx.unlock();
+}
+
+
 
 
 char** parse(const char* command)
