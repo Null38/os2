@@ -1,10 +1,11 @@
 /*
 2-1
 2-2
-2-3
+2-3 O
 */
 
 #include <iostream>
+#include <fstream>
 #include <thread>
 #include <mutex>
 #include <windows.h>
@@ -15,7 +16,7 @@
 
 using namespace std;
 
-
+#define X 5
 #define Y 3
 #define DONE 200
 
@@ -33,8 +34,7 @@ class StakNode;
 class ProcList;
 struct ProcNode;
 
-void enqueue(processList, processType);
-void enqueue(processList);
+void enqueue(ProcNode*);
 void dequeue(StakNode*);
 void promote();
 void split_n_merge(StakNode*);
@@ -83,6 +83,7 @@ public:
 	ProcNode* Remove();
 	ProcNode* Remove(int);
 	//void Instert(ProcNode*)
+	ProcNode* GetStartInfo();
 
 
 private:
@@ -230,6 +231,11 @@ ProcNode* ProcList::Remove(int size)
 
 	return removed;
 }
+
+ProcNode* ProcList::GetStartInfo()
+{
+	return start;
+}
 #pragma endregion ProcNode
 
 
@@ -241,20 +247,29 @@ StakNode* stakBottom = new StakNode(nullptr);
 StakNode* stakTop = stakBottom;
 StakNode* P = stakBottom;
 ProcList WQ = ProcList(nullptr);
+ProcNode* running;
+
+ifstream command;
 
 int main(int argc, char* argv[])
 {
-	//enqueue(shell, Foreground);
-	//enqueue(monitor, Background);
+	command.open("command.txt");
 
+	ProcNode* instProc = new ProcNode(id++);
+	instProc->func = shell;
+	instProc->type = processType::Foreground;
+	instProc->period = Y;
+	enqueue(instProc);
 
-	char** p = parse(" echo ads -n 2 ;  &12  34 ");
-	exec(p);
+	instProc = new ProcNode(id++);
+	instProc->func = monitor;
+	instProc->type = processType::Background;
+	instProc->period = X;
+	enqueue(instProc);
 
-	prime("97");
+	monitor();
 
-	sum("100", "3");
-
+	command.close();
 	return 0;
 }
 
@@ -343,20 +358,66 @@ void split_n_merge(StakNode* stak)
 
 void shell()
 {
-	while (true)
-	{
+	string line;
 
-	}
+	getline(command, line);
+
+	printMtx.lock();
+	cout << "prompt>" << line << endl;
+	printMtx.unlock();
+
+	exec(parse(line.c_str()));
 }
 
 void monitor()
 {
-	while (true)
-	{
-		printMtx.lock();
+	printMtx.lock();
+	cout << "Running: ";
+	
+	cout << endl << "---------------------------" << endl;
 
-		printMtx.unlock();
+	cout << "DQ: ";
+	
+	for (StakNode* stak = stakBottom; stak!= nullptr; stak = stak->NextNode())
+	{
+		cout << (P == stak ? "P => [" : "     [" );
+
+		for (ProcNode* proc = stak->procList()->GetStartInfo(); proc != nullptr; proc = proc->next)
+		{
+			cout //<< isPromoted ? "*" : ""
+				<< proc->id 
+				<< (proc->type == processType::Foreground ? "F" : "B")
+				<< (proc->next != nullptr ? " " : "");
+		}
+		cout << "]";
+
+		bool isBottom = false, isTop = false;
+		if (stak == stakBottom)
+			isBottom = true;
+		if (stak == stakTop)
+			isTop = true;
+
+		cout << (isBottom || isTop ? "(" : "")
+			<< (isBottom ? "bottom" : "")
+			<< (isBottom && isTop ? "/" : "")
+			<< (isTop ? "top" : "")
+			<< (isBottom || isTop ? ")" : "");
+
+		if (stak != stakTop)
+			cout << endl << "    " ;
 	}
+
+	cout << endl << "---------------------------" << endl;
+	cout << "WQ: [";
+	for (ProcNode* proc = WQ.GetStartInfo(); proc != nullptr; proc = proc->next)
+	{
+		cout << proc->id
+			<< (proc->type == processType::Foreground ? "F" : "B")
+			<< (proc->next != nullptr ? " " : "");
+		//  << leftTime
+	}
+	cout << "]" << endl;
+	printMtx.unlock();
 }
 
 void echo(string output)
@@ -466,9 +527,6 @@ void sumTh(int start, int end, int* result)
 	*result += value;
 	sumMtx.unlock();
 }
-
-
-
 
 char** parse(const char* command)
 {
