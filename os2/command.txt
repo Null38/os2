@@ -1,4 +1,4 @@
-﻿echo abc;   &echo def;echoghi
+echo abc ;   &echo def;echo ghi
 echo abc-p 5  -d 50 –n 3
 sum1000000–m 4 -n 2
 gcd12 18
