@@ -63,6 +63,7 @@ void sumTh(int, int, int*);
 char** parse(const char*);
 void exec(char**);
 void make(vector<string>);
+void makeTh(ProcNode*);
 
 class StakNode
 {
@@ -97,7 +98,7 @@ public:
 	void Add(ProcNode*);
 	ProcNode* Remove();
 	ProcNode* Remove(int);
-	//void Instert(ProcNode*)
+	void Insert(ProcNode*);
 	ProcNode* GetStartInfo();
 
 
@@ -162,13 +163,15 @@ struct ProcNode
 	vector<string> args;
 	bool isPromoted = false;
 	int leftTime = DONE;
+	int startAt;
 	int period = -1;
 	int leftWait = 0;
 	ProcNode* next = nullptr;
 
-	ProcNode(int id)
+	ProcNode(int id, int startSec)
 	{
 		this->id = id;
+		startAt = startSec;
 	}
 };
 
@@ -211,6 +214,7 @@ void ProcList::Add(ProcNode* newNode)
 	for (; end->next != nullptr; end = end->next)
 	{
 		_nodeCount++;
+		procCount++;
 	}
 }
 
@@ -245,7 +249,27 @@ ProcNode* ProcList::Remove(int size)
 	if (end != nullptr)
 		end->next = nullptr;
 	_nodeCount--;
+	procCount--;
 	return removed;
+}
+
+
+void  ProcList::Insert(ProcNode* newNode)
+{
+	/*newNode->leftWait = newNode->period;
+
+	ProcNode* i;
+	for (i = start; i->next != nullptr; i = i->next)
+	{
+		if (i->leftWait >= newNode->leftWait)
+			break;
+	}
+
+	i->next = newNode->next;
+	newNode->next = i;
+
+	_nodeCount++;
+	procCount++;*/
 }
 
 ProcNode* ProcList::GetStartInfo()
@@ -258,6 +282,7 @@ ProcNode* ProcList::GetStartInfo()
 mutex printMtx;
 
 int id = 0;
+int sec = 0;
 
 StakNode* stakBottom = new StakNode(nullptr);
 StakNode* stakTop = stakBottom;
@@ -271,20 +296,22 @@ int main(int argc, char* argv[])
 {
 	command.open("command.txt");
 
-	ProcNode* instProc = new ProcNode(id++);
+	ProcNode* instProc = new ProcNode(id++, sec);
 	instProc->func = shell;
 	instProc->type = processType::Foreground;
 	instProc->period = Y;
 	enqueue(instProc);
 
-	instProc = new ProcNode(id++);
+	instProc = new ProcNode(id++, sec);
 	instProc->func = monitor;
 	instProc->type = processType::Background;
 	instProc->period = X;
 	enqueue(instProc);
 
-	shell();
-	monitor();
+	while (true)
+	{
+		scheduler();
+	}
 
 	command.close();
 	return 0;
@@ -292,6 +319,7 @@ int main(int argc, char* argv[])
 
 void scheduler()
 {
+	sec++;
 	dequeue(stakTop);
 }
 
@@ -319,6 +347,7 @@ void dequeue(StakNode* stak)
 	ProcNode* deNode = stak->procList()->Remove();
 
 	if(deNode->leftTime <= 0) delete deNode;
+	else WQ.Insert(deNode);
 
 	if (stak->procList()->nodeCount() == 0)
 	{
@@ -508,7 +537,7 @@ void prime(string x)
 	for (int i = 3; i <= _x; i++)
 	{
 		bool check = true;
-		for (int j = 0; j < primes.size(); j++)
+		for (size_t j = 0; j < primes.size(); j++)
 		{
 			if (i % primes[j] == 0)
 			{
@@ -541,7 +570,7 @@ void sum(string x, string m)
 		sumThread.push_back(new thread(sumTh, (_x / _m) * i, end, &result));
 	}
 
-	for (int i = 0; i < sumThread.size(); i++)
+	for (size_t i = 0; i < sumThread.size(); i++)
 	{
 		sumThread[i]->join();
 	}
@@ -670,7 +699,7 @@ void make(vector<string> args)
 	bool doModif = false;
 	vector<string> _args;
 
-	for (int i = (type == processType::Foreground ? 1 : 2); i < args.size(); i++)
+	for (size_t i = (type == processType::Foreground ? 1 : 2); i < args.size(); i++)
 	{
 		if (args[i].compare("-") == 0)
 		{
@@ -698,7 +727,7 @@ void make(vector<string> args)
 
 	for (int i = 0; i < n; i++)
 	{
-		ProcNode* newProc = new ProcNode(id++);
+		ProcNode* newProc = new ProcNode(id++, sec);
 
 		newProc->type = type;
 
@@ -728,6 +757,17 @@ void make(vector<string> args)
 		newProc->args = _args;
 
 		enqueue(newProc);
+		makeTh(newProc);
 	}
 
+}
+
+void makeTh(ProcNode* proc)
+{
+	//string arg0(proc->args.size() >= 1 ? proc->args[0] : ""), arg1(proc->args.size() >= 2 ? proc->args[1] : "");
+	//thread th((void(*)(string, string))proc->func, arg0, arg1);
+	//if proc.type == FG
+	//	joln?
+	//else
+	//	detatch?
 }
