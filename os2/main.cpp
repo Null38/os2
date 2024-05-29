@@ -1,7 +1,21 @@
 /*
-2-1
-2-2
-2-3 O
+2-1    
+	1) O
+	2) 
+	3) O
+	4) O
+	5) 
+
+2-2    
+	1) 
+	2) 
+	3) O
+	4) O
+
+2-3    O
+	1) O
+	2) O
+	3) O
 */
 
 #include <iostream>
@@ -34,6 +48,7 @@ class StakNode;
 class ProcList;
 struct ProcNode;
 
+void scheduler();
 void enqueue(ProcNode*);
 void dequeue(StakNode*);
 void promote();
@@ -145,6 +160,7 @@ struct ProcNode
 	void (*func)() = nullptr;
 	processType type = processType::Foreground;
 	vector<string> args;
+	bool isPromoted = false;
 	int leftTime = DONE;
 	int period = -1;
 	int leftWait = 0;
@@ -228,7 +244,7 @@ ProcNode* ProcList::Remove(int size)
 		this->end = nullptr;
 	if (end != nullptr)
 		end->next = nullptr;
-
+	_nodeCount--;
 	return removed;
 }
 
@@ -267,10 +283,16 @@ int main(int argc, char* argv[])
 	instProc->period = X;
 	enqueue(instProc);
 
+	shell();
 	monitor();
 
 	command.close();
 	return 0;
+}
+
+void scheduler()
+{
+	dequeue(stakTop);
 }
 
 void enqueue(ProcNode* node)
@@ -313,14 +335,16 @@ void promote()
 {
 	ProcNode* pNode =  P->procList()->Remove();
 	StakNode* check = P;
-
+	bool isNew = false;
 	if ((P = P->NextNode()) == nullptr)
 	{
 		P = new StakNode(stakTop);
 		stakTop = P;
+		isNew = true;
 	}
 
 	P->procList()->Add(pNode);
+	pNode->isPromoted = true;
 
 	if (check->procList()->nodeCount() == 0)
 	{
@@ -330,9 +354,9 @@ void promote()
 		delete check;
 	}
 
-	if ((P = P->NextNode()) == nullptr)
+	if (isNew)
 		P = stakBottom;
-
+	
 	split_n_merge(P);
 }
 
@@ -345,14 +369,25 @@ void split_n_merge(StakNode* stak)
 
 	ProcNode* moveNode = stak->procList()->Remove(count / 2);
 	
+	StakNode* check = stak;
+
 	if ((stak = stak->NextNode()) == nullptr)
 	{
 		stakTop = new StakNode(stakTop);
 		stak = stakTop;
 	}
 
-	stak->procList()->Add(moveNode);
 
+	if (check->procList()->ProcCount() == 0)
+	{
+		if (check == stakBottom)
+			stakBottom = stakBottom->NextNode();
+
+		delete check;
+	}
+
+	stak->procList()->Add(moveNode);
+	
 	split_n_merge(stak);
 }
 
@@ -384,10 +419,12 @@ void monitor()
 
 		for (ProcNode* proc = stak->procList()->GetStartInfo(); proc != nullptr; proc = proc->next)
 		{
-			cout //<< isPromoted ? "*" : ""
+			cout << (proc->isPromoted ? "*" : "")
 				<< proc->id 
 				<< (proc->type == processType::Foreground ? "F" : "B")
 				<< (proc->next != nullptr ? " " : "");
+
+			proc->isPromoted = false;
 		}
 		cout << "]";
 
@@ -510,7 +547,7 @@ void sum(string x, string m)
 	}
 
 	printMtx.lock();
-	cout << result << endl;
+	cout << result % 100000 << endl;
 	printMtx.unlock();
 }
 
