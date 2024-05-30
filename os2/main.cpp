@@ -1,14 +1,14 @@
 /*
-2-1
+2-1    -
 	1) O
 	2) O
 	3) O
 	4) O
-	5)
+	5) X
 
-2-2
-	1)
-	2)
+2-2    -
+	1) X
+	2) O
 	3) O
 	4) O
 
@@ -30,7 +30,7 @@
 
 using namespace std;
 
-#define X 5
+#define X 50
 #define Y 3
 #define DONE 200
 
@@ -131,6 +131,9 @@ void LinkedList<T>::Add(T* data)
 template<typename T>
 void LinkedList<T>::Add(Node* node)
 {
+	if (node == nullptr)
+		return;
+
 	if (!start)
 		start = node;
 	else
@@ -285,19 +288,22 @@ StackNode::~StackNode()
 #pragma region ProcNode
 struct ProcNode
 {
-	int id;
-	void (*func)(ProcNode*) = nullptr;
-	processType type = processType::Foreground;
-	vector<string> args;
+	struct ProcInfo
+	{
+		void (*func)(ProcInfo*) = nullptr;
+		int id;
+		processType type;
+		vector<string> args;
+	};
+	ProcInfo info;
+
 	bool isPromoted = false;
 	int lifeTime;
 	int startAt;
-	int period = -1;
+	int period;
 	int leftWait = 0;
-	ProcNode* next = nullptr;
-
-	ProcNode(int, processType, void (*func)(ProcNode*), int, int);
-	ProcNode(int id, void (*func)(ProcNode*), int period, int startSec) : ProcNode(id, processType::Foreground, func, period, startSec) {}
+	ProcNode(int, processType, void (*func)(ProcInfo*), int, int, int);
+	ProcNode(int id, void (*func)(ProcInfo*), int lifeTime, int period, int startSec) : ProcNode(id, processType::Foreground, func, lifeTime, period, startSec) {}
 	ProcNode(int, processType, int, int, int);
 	~ProcNode();
 	static int Count() { return procCount; }
@@ -308,18 +314,18 @@ private:
 };
 int ProcNode::procCount = 0;
 
-ProcNode::ProcNode(int id, processType type, void(*func)(ProcNode*), int period, int startSec) : ProcNode(id, type, DONE * 10, period, startSec)
+ProcNode::ProcNode(int id, processType type, void(*func)(ProcInfo*), int lifeTime, int period, int startSec) : ProcNode(id, type, lifeTime, period, startSec)
 {
-	this->func = func;
+	this->info.func = func;
 }
 
 ProcNode::ProcNode(int id, processType type, int lifeTime, int period, int startSec)
 {
-	this->id     = id;
-	this->type   = type;
+	info.id        = id;
+	info.type      = type;
 	this->lifeTime = lifeTime;
-	this->period = period;
-	startAt = startSec;
+	this->period   = period;
+	startAt        = startSec;
 	procCount++;
 }
 
@@ -335,26 +341,28 @@ int ProcNode::GetLeftTime(ProcNode* proc)
 #pragma endregion ProcNode
 
 #pragma region func_forward_declaration
-void init();
+void Init();
 void scheduler();
 void enqueue(ProcNode*);
 void dequeue(LinkedList<StackNode>::Node*);
 void promote();
 void split_n_merge(LinkedList<StackNode>::Node*);
-void shell(ProcNode*);
-void monitor(ProcNode*);
-void echo(ProcNode*);
-void gcd(ProcNode*);
-void prime(ProcNode*);
-void sum(ProcNode*);
+void shell(ProcNode::ProcInfo*);
+void monitor(ProcNode::ProcInfo*);
+void echo(ProcNode::ProcInfo*);
+void gcd(ProcNode::ProcInfo*);
+void prime(ProcNode::ProcInfo*);
+void sum(ProcNode::ProcInfo*);
 void sumTh(int, int, int*);
 char** parse(const char*);
 void exec(char**);
-void make(vector<string>);
-void makeTh(ProcNode*);
+void Make(vector<string>);
+void MakeTh(ProcNode*);
+void ProcessRunner(ProcNode::ProcInfo, thread*);
 #pragma endregion func_forward_declaration
 
 mutex printMtx;
+mutex qeueuMtx;
 
 int id = 0;
 int sec = 0;
@@ -363,27 +371,40 @@ LinkedList<StackNode> stackList;
 LinkedList<StackNode>::Node* P;
 LinkedList<ProcNode> WQ;
 ProcNode* running;
+thread* fg = nullptr;
+
+mutex fgMtx;
 
 ifstream command;
 
 int main(int argc, char* argv[])
 {
-	init();
+	Init();
 	command.open("command.txt");
 
-	enqueue(new ProcNode(id++, shell, Y, sec));
-	enqueue(new ProcNode(id++, processType::Background, monitor, X, sec));
+	enqueue(new ProcNode(id++, shell, 1000, Y, sec));
+	enqueue(new ProcNode(id++, processType::Background, monitor, 2147483647, X, sec));
 
-	while (stackList.NodeCount() || WQ.NodeCount())
+	while (stackList.NodeCount())
 	{
 		scheduler();
 	}
 
 	command.close();
+
+
+	if (fg != nullptr)
+	{
+		fgMtx.lock();
+		fg->join();
+		fgMtx.unlock();
+		delete fg;
+	}
+
 	return 0;
 }
 
-void init()
+void Init()
 {
 	stackList.Add(new StackNode());
 	P = stackList.GetEnd();
@@ -415,12 +436,13 @@ void scheduler()
 			temp = WQ.GetStart();
 			continue;
 		}
-
 		temp->data->leftWait--;
 
 		if (temp->data->leftWait == 0)
 		{
+			qeueuMtx.lock();
 			enqueue(WQ.Remove());
+			qeueuMtx.unlock();
 			temp = WQ.GetStart();
 			continue;
 		}
@@ -428,15 +450,27 @@ void scheduler()
 		temp = temp->NextNode();
 	}
 	if (stackList.GetStart()->data->procList()->NodeCount() != 0)
-		dequeue(stackList.GetEnd());
-
-
-	if (running != nullptr)
 	{
-		running->leftWait = running->period;
-		WQ.Insert(&ProcNode::GetLeftTime, running);
-		running = nullptr;
+		qeueuMtx.lock();
+		dequeue(stackList.GetEnd());
+		if (stackList.NodeCount() == 0)
+			return;
+
+		qeueuMtx.unlock();
 	}
+	if (running == nullptr)
+		return;
+
+	MakeTh(running);
+
+	qeueuMtx.lock(); 
+	if (running->period == -1)
+		running->leftWait = running->lifeTime;
+	else
+		running->leftWait = running->period;
+	WQ.Insert(&ProcNode::GetLeftTime, running);
+	qeueuMtx.unlock();
+	running = nullptr;
 }
 
 #pragma region Dynamic_Queueing
@@ -444,7 +478,7 @@ void enqueue(ProcNode* node)
 {
 	LinkedList<StackNode>::Node* addTo;
 
-	if (node->type == processType::Foreground)
+	if (node->info.type == processType::Foreground)
 	{
 		addTo = stackList.GetEnd();
 	}
@@ -462,6 +496,8 @@ void enqueue(ProcNode* node)
 void dequeue(LinkedList<StackNode>::Node* stack)
 {
 	ProcNode* deNode = stack->data->procList()->Remove();
+	if (deNode == nullptr)
+		return;
 
 	if (deNode->startAt + deNode->lifeTime - sec <= 0) delete deNode;
 	else running = deNode;
@@ -485,6 +521,9 @@ void dequeue(LinkedList<StackNode>::Node* stack)
 void promote()
 {
 	ProcNode* pNode = P->data->procList()->Remove();
+	if (pNode == nullptr)
+		return;
+
 	LinkedList<StackNode>::Node* check = P;
 	bool isNew = false;
 	if ((P = P->NextNode()) == nullptr)
@@ -515,8 +554,8 @@ void promote()
 void split_n_merge(LinkedList<StackNode>::Node* stack)
 {
 	int threshold = ProcNode::Count() / StackNode::Count();
-	int count;
-	if ((count = stack->data->procList()->NodeCount()) <= threshold)
+	int count = stack->data->procList()->NodeCount();
+	if (count <= threshold)
 		return;
 
 	LinkedList<ProcNode>::Node* moveNode = stack->data->procList()->Remove(count / 2);
@@ -529,7 +568,8 @@ void split_n_merge(LinkedList<StackNode>::Node* stack)
 		stack = stackList.GetEnd();
 	}
 
-	
+	stack->data->procList()->Add(moveNode);
+
 	if (check->data->procList()->NodeCount() == 0)
 	{
 		auto del = check->data;
@@ -538,15 +578,17 @@ void split_n_merge(LinkedList<StackNode>::Node* stack)
 	}
 	
 
-	stack->data->procList()->Add(moveNode);
-
 	split_n_merge(stack);
 }
 #pragma endregion Dynamic_Queueing
 
+
+
 #pragma region commandFunc
-void shell(ProcNode* proc)
+void shell(ProcNode::ProcInfo* proc)
 {
+	if (command.eof())
+		return;
 	string line;
 
 	getline(command, line);
@@ -558,11 +600,15 @@ void shell(ProcNode* proc)
 	exec(parse(line.c_str()));
 }
 
-void monitor(ProcNode* proc)
+void monitor(ProcNode::ProcInfo* proc)
 {
 	printMtx.lock();
-	cout << "Running: ";
-
+	qeueuMtx.lock();
+	cout << "Running: [";
+	if (running != nullptr)
+		cout << running->info.id << (running->info.type == processType::Foreground ? "F]" : "B]");
+	else
+		cout << "]";
 	cout << endl << "---------------------------" << endl;
 
 	cout << "DQ: ";
@@ -571,14 +617,14 @@ void monitor(ProcNode* proc)
 	{
 		cout << (P == stack ? "P => [" : "     [");
 
-		for (ProcNode* proc = stack->data->procList()->GetStart()->data; proc != nullptr; proc = proc->next)
+		for (auto temp = stack->data->procList()->GetStart(); temp != nullptr; temp = temp->NextNode())
 		{
-			cout << (proc->isPromoted ? "*" : "")
-				<< proc->id
-				<< (proc->type == processType::Foreground ? "F" : "B")
-				<< (proc->next != nullptr ? " " : "");
+			cout << (temp->data->isPromoted ? "*" : "")
+				<< temp->data->info.id
+				<< (temp->data->info.type == processType::Foreground ? "F" : "B")
+				<< (temp->NextNode() != nullptr ? " " : "");
 
-			proc->isPromoted = false;
+			temp->data->isPromoted = false;
 		}
 		cout << "]";
 
@@ -600,25 +646,26 @@ void monitor(ProcNode* proc)
 
 	cout << endl << "---------------------------" << endl;
 	cout << "WQ: [";
-	for (ProcNode* proc = WQ.GetStart()->data; proc != nullptr; proc = proc->next)
+	for (auto temp = WQ.GetStart(); temp != nullptr; temp = temp->NextNode())
 	{
-		cout << proc->id
-			<< (proc->type == processType::Foreground ? "F:" : "B:") 
-			<< proc->leftWait
-			<< (proc->next != nullptr ? " " : "");
+		cout << temp->data->info.id
+			<< (temp->data->info.type == processType::Foreground ? "F:" : "B:")
+			<< temp->data->leftWait
+			<< (temp->NextNode() != nullptr ? " " : "");
 	}
 	cout << "]" << endl;
 	printMtx.unlock();
+	qeueuMtx.unlock();
 }
 
-void echo(ProcNode* proc)
+void echo(ProcNode::ProcInfo* proc)
 {
 	printMtx.lock();
 	cout << proc->args[0] << endl;
 	printMtx.unlock();
 }
 
-void gcd(ProcNode* proc)
+void gcd(ProcNode::ProcInfo* proc)
 {
 	int a = stoi(proc->args[0]), b = stoi(proc->args[1]), result;
 	if (a < b)
@@ -645,7 +692,7 @@ void gcd(ProcNode* proc)
 	printMtx.unlock();
 }
 
-void prime(ProcNode* proc)
+void prime(ProcNode::ProcInfo* proc)
 {
 	int _x = stoi(proc->args[0]);
 
@@ -662,7 +709,7 @@ void prime(ProcNode* proc)
 	for (int i = 3; i <= _x; i++)
 	{
 		bool check = true;
-		for (size_t j = 0; j < primes.size(); j++)
+		for (unsigned int j = 0; j < primes.size(); j++)
 		{
 			if (i % primes[j] == 0)
 			{
@@ -682,7 +729,7 @@ void prime(ProcNode* proc)
 
 mutex sumMtx;
 
-void sum(ProcNode* proc)
+void sum(ProcNode::ProcInfo* proc)
 {
 	int _x = stoi(proc->args[0]), _m = stoi(proc->args[1]);
 
@@ -695,7 +742,7 @@ void sum(ProcNode* proc)
 		sumThread.push_back(new thread(sumTh, (_x / _m) * i, end, &result));
 	}
 
-	for (size_t i = 0; i < sumThread.size(); i++)
+	for (unsigned int i = 0; i < sumThread.size(); i++)
 	{
 		sumThread[i]->join();
 	}
@@ -771,7 +818,7 @@ void exec(char** args)
 	{
 		if (strcmp(*reader, ";") == 0)
 		{
-			make(command);
+			Make(command);
 			command.clear();
 		}
 		else
@@ -785,7 +832,7 @@ void exec(char** args)
 
 	if (command.size())
 	{
-		make(command);
+		Make(command);
 	}
 
 	free(*reader);
@@ -793,7 +840,7 @@ void exec(char** args)
 	free(args);
 }
 
-void make(vector<string> args)
+void Make(vector<string> args)
 {
 	processType type = processType::Foreground;
 	if (args[0].compare("&") == 0)
@@ -825,7 +872,7 @@ void make(vector<string> args)
 	bool doModif = false;
 	vector<string> _args;
 
-	for (size_t i = (type == processType::Foreground ? 1 : 2); i < args.size(); i++)
+	for (unsigned int i = (type == processType::Foreground ? 1 : 2); i < args.size(); i++)
 	{
 		if (args[i].compare("-") == 0)
 		{
@@ -858,35 +905,62 @@ void make(vector<string> args)
 		switch (proc)
 		{
 		case processList::echo:
-			newProc->func = echo;
+			newProc->info.func = echo;
 			break;
 		case processList::dummy:
-			newProc->func = nullptr;
+			newProc->info.func = nullptr;
 			break;
 		case processList::gcd:
-			newProc->func = gcd;
+			newProc->info.func = gcd;
 			break;
 		case processList::prime:
-			newProc->func = prime;
+			newProc->info.func = prime;
 			break;
 		case processList::sum:
-			newProc->func = sum;
+			newProc->info.func = sum;
 			break;
 		}
 
-		newProc->args = _args;
-
+		newProc->info.args = _args;
+		qeueuMtx.lock();
 		enqueue(newProc);
+		qeueuMtx.unlock();
 	}
 
 }
 
-void makeTh(ProcNode* proc)
+void MakeTh(ProcNode* proc)
 {
-	//string arg0(proc->args.size() >= 1 ? proc->args[0] : ""), arg1(proc->args.size() >= 2 ? proc->args[1] : "");
-	//thread th((void(*)(string, string))proc->func, arg0, arg1);
-	//if proc.type == FG
-	//	joln?
-	//else
-	//	detatch?
+	if (proc->info.type == processType::Foreground)
+	{
+		fgMtx.lock();
+		fg = new thread(ProcessRunner, proc->info, fg);
+		fgMtx.unlock();
+	}
+	else
+	{
+		thread t(ProcessRunner, proc->info, nullptr);
+		t.detach();
+	}
+}
+
+void ProcessRunner(ProcNode::ProcInfo proc, thread* prevTh)
+{
+	if (prevTh != nullptr)
+		prevTh->join();
+
+	if (proc.func != nullptr)
+		proc.func(&proc);
+
+	if (prevTh != nullptr)
+	{
+		fgMtx.lock();
+		if (fg == prevTh)
+		{
+			fg = nullptr;
+		}
+		delete prevTh;
+
+		fgMtx.unlock();
+	}
 }
