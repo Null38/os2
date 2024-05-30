@@ -46,27 +46,8 @@ enum class processType
 
 template<typename T>
 class LinkedList;
-class StackNode;
+struct StackNode;
 struct ProcNode;
-
-void init();
-void scheduler();
-void enqueue(ProcNode*);
-void dequeue(StackNode*);
-void promote();
-void split_n_merge(StackNode*);
-void shell(ProcNode*);
-void monitor(ProcNode*);
-void echo(ProcNode*);
-void gcd(ProcNode*);
-void prime(ProcNode*);
-void sum(ProcNode*);
-void sumTh(int, int, int*);
-char** parse(const char*);
-void exec(char**);
-void make(vector<string>);
-void makeTh(ProcNode*);
-
 
 #pragma region LinkedList
 template<typename T>
@@ -75,14 +56,16 @@ class LinkedList
 public:
 	struct Node;
 	LinkedList();
-	Node* GetStart();
-	Node* GetEnd();
+	Node* GetStart() { return start; }
+	Node* GetEnd() { return end; }
+	int NodeCount() { return nodeCount; }
+
 	void Add(T* data);
 	void Add(Node* node);
-	int NodeCount() { return nodeCount; }
 	T* Remove();
 	Node* Remove(int index);
-	void insert(int(*)(T*), T*);
+	void Insert(int (*compareFunc)(T*), T*);
+	void DeleteRequest(Node*);
 private:
 	Node* start;
 	Node* end;
@@ -94,6 +77,7 @@ private:
 template<typename T>
 struct LinkedList<T>::Node
 {
+	friend class LinkedList<T>;
 	LinkedList<T>* parent;
 
 	T* data;
@@ -101,8 +85,9 @@ struct LinkedList<T>::Node
 	Node(LinkedList<T>*, T*);
 	~Node();
 
-	Node* NextNode();
-private:
+	Node* NextNode() { return next; }
+protected:
+	Node* prev = nullptr;
 	Node* next = nullptr;
 };
 
@@ -111,19 +96,13 @@ LinkedList<T>::Node::Node(LinkedList<T>* parent, T* data)
 {
 	this->parent = parent;
 	this->data = data;
-	nodeCount++;
+	parent->nodeCount++;
 }
 
 template<typename T>
 LinkedList<T>::Node::~Node()
 {
-	nodeCount--;
-}
-
-template<typename T>
-LinkedList<T>::Node* LinkedList<T>::Node::NextNode()
-{
-	return nullptr;
+	parent->nodeCount--;
 }
 #pragma endregion Node
 
@@ -135,25 +114,16 @@ LinkedList<T>::LinkedList()
 }
 
 template<typename T>
-LinkedList<T>::Node* LinkedList<T>::GetStart()
-{
-	return start->data;
-}
-
-template<typename T>
-LinkedList<T>::Node* LinkedList<T>::GetEnd()
-{
-	return end->data;
-}
-
-template<typename T>
 void LinkedList<T>::Add(T* data)
 {
-	Node* newNode = new Node(data);
+	Node* newNode = new Node(this, data);
 	if (start == nullptr)
 		start = newNode;
 	else
+	{
+		newNode->prev = end;
 		end->next = newNode;
+	}
 
 	end = newNode;
 }
@@ -164,11 +134,16 @@ void LinkedList<T>::Add(Node* node)
 	if (!start)
 		start = node;
 	else
+	{
+		node->prev = end;
 		end->next = node;
-
+	}
+	nodeCount++;
+	node->parent = this;
 	for (Node* temp = node; temp->next != nullptr; temp = temp->next)
 	{
 		nodeCount++;
+		temp->parent = this;
 	}
 
 	end = node;
@@ -182,11 +157,11 @@ T* LinkedList<T>::Remove()
 
 	Node* temp = start;
 	start = start->next;
+	if (start != nullptr)
+		start->prev = nullptr;
 
 	T* data = temp->data;
 	delete temp;
-
-	nodeCount--;
 
 	return data;
 }
@@ -210,6 +185,10 @@ typename LinkedList<T>::Node* LinkedList<T>::Remove(int size)
 	}
 
 	start = dataEnd->next;
+	if (start)
+		start->prev = nullptr;
+
+	data->prev = nullptr;
 	dataEnd->next = nullptr;
 
 	if (start == nullptr)
@@ -219,9 +198,9 @@ typename LinkedList<T>::Node* LinkedList<T>::Remove(int size)
 }
 
 template<typename T>
-void LinkedList<T>::insert(int (*compareFunc)(T*), T* data)
+void LinkedList<T>::Insert(int (*compareFunc)(T*), T* data)
 {
-	Node* newNode = new Node(data);
+	Node* newNode = new Node(this, data);
 
 	if (start == nullptr)
 	{
@@ -234,7 +213,7 @@ void LinkedList<T>::insert(int (*compareFunc)(T*), T* data)
 	Node* curr = start;
 	Node* prev = nullptr;
 
-	while (curr != nullptr && compareFunc(newNode) >= compareFunc(curr->data))
+	while (curr != nullptr && compareFunc(newNode->data) >= compareFunc(curr->data))
 	{
 		prev = curr;
 		curr = curr->next;
@@ -243,27 +222,48 @@ void LinkedList<T>::insert(int (*compareFunc)(T*), T* data)
 	if (prev == nullptr)
 	{
 		newNode->next = start;
+		start->prev = newNode;
 		start = newNode;
 
 		return;
 	}
 
 	prev->next = newNode;
+	newNode->prev = prev;
 	newNode->next = curr;
 	if (curr == nullptr)
 		end = newNode;
 }
+
+template<typename T>
+void LinkedList<T>::DeleteRequest(Node* node)
+{
+	if (node == nullptr)
+		return;
+
+	if (node->prev == nullptr)
+		start = node->next;
+	else
+		node->prev->next = node->next;
+
+	if (node->next == nullptr)
+		end = node->prev;
+	else
+		node->next->prev = node->prev;
+
+	delete node;
+}
 #pragma endregion LinkedList
 
-#pragma region stackNode
+#pragma region StackNode
 struct StackNode
 {
 public:
 	StackNode();
 	~StackNode();
 
-	static int Count();
-	LinkedList<ProcNode> procList();
+	static int Count() { return nodeSize; }
+	LinkedList<ProcNode>* procList() { return &_procList; }
 
 private:
 	static int nodeSize;
@@ -281,21 +281,13 @@ StackNode::~StackNode()
 {
 	nodeSize--;
 }
-
-int StackNode::Count()
-{
-	return nodeSize;
-}
-
-#pragma endregion stackNode
+#pragma endregion StackNode
 
 #pragma region ProcNode
 struct ProcNode
 {
-	static int procCount;
-
 	int id;
-	void (*func)() = nullptr;
+	void (*func)(ProcNode*) = nullptr;
 	processType type = processType::Foreground;
 	vector<string> args;
 	bool isPromoted = false;
@@ -305,16 +297,62 @@ struct ProcNode
 	int leftWait = 0;
 	ProcNode* next = nullptr;
 
-	ProcNode(int id, int startSec)
-	{
-		this->id = id;
-		startAt = startSec;
-	}
-};
+	ProcNode(int, processType, void (*func)(ProcNode*), int, int);
+	ProcNode(int id, void (*func)(ProcNode*), int period, int startSec) : ProcNode(id, processType::Foreground, func, period, startSec) {}
+	ProcNode(int, processType, int, int, int);//(id++, type, d, p, sec);
+	~ProcNode();
+	static int Count() { return procCount; }
+	static int GetLeftTime(ProcNode*);
 
+private:
+	static int procCount;
+};
 int ProcNode::procCount = 0;
+
+ProcNode::ProcNode(int id, processType type, void(*func)(ProcNode*), int period, int startSec) : ProcNode(id, type, DONE, period, startSec)
+{
+	this->func = func;
+}
+
+ProcNode::ProcNode(int id, processType type, int lifeTime, int period, int startSec)
+{
+	this->id     = id;
+	this->type   = type;
+	this->period = period;
+	startAt = startSec;
+	procCount++;
+}
+
+ProcNode::~ProcNode()
+{
+	procCount--;
+}
+
+int ProcNode::GetLeftTime(ProcNode* proc)
+{
+	return proc->leftTime;
+}
 #pragma endregion ProcNode
 
+#pragma region func_forward_declaration
+void init();
+void scheduler();
+void enqueue(ProcNode*);
+void dequeue(LinkedList<StackNode>::Node*);
+void promote();
+void split_n_merge(LinkedList<StackNode>::Node*);
+void shell(ProcNode*);
+void monitor(ProcNode*);
+void echo(ProcNode*);
+void gcd(ProcNode*);
+void prime(ProcNode*);
+void sum(ProcNode*);
+void sumTh(int, int, int*);
+char** parse(const char*);
+void exec(char**);
+void make(vector<string>);
+void makeTh(ProcNode*);
+#pragma endregion func_forward_declaration
 
 mutex printMtx;
 
@@ -330,21 +368,13 @@ ifstream command;
 
 int main(int argc, char* argv[])
 {
+	init();
 	command.open("command.txt");
 
-	ProcNode* instProc = new ProcNode(id++, sec);
-	instProc->func = (void(*)())shell;
-	instProc->type = processType::Foreground;
-	instProc->period = Y;
-	enqueue(instProc);
+	enqueue(new ProcNode(id++, shell, Y, sec));
+	enqueue(new ProcNode(id++, processType::Background, monitor, X, sec));
 
-	instProc = new ProcNode(id++, sec);
-	instProc->func = (void(*)())monitor;
-	instProc->type = processType::Background;
-	instProc->period = X;
-	enqueue(instProc);
-
-	while (true)
+	while (stackList.NodeCount())
 	{
 		scheduler();
 	}
@@ -356,100 +386,118 @@ int main(int argc, char* argv[])
 void init()
 {
 	stackList.Add(new StackNode());
+	P = stackList.GetEnd();
 }
 
 void scheduler()
 {
 	sec++;
-	dequeue(stackList.GetEnd()->data);
+	dequeue(stackList.GetEnd());
+	WQ.Insert(&ProcNode::GetLeftTime, running);
 }
 
+#pragma region Dynamic_Queueing
 void enqueue(ProcNode* node)
 {
-	StackNode* addTo;
+	LinkedList<StackNode>::Node* addTo;
 
 	if (node->type == processType::Foreground)
 	{
-		addTo = stackList.GetEnd()->data;
+		addTo = stackList.GetEnd();
 	}
 	else
 	{
-		addTo = stackList.GetStart()->data;
+		addTo = stackList.GetStart();
 	}
 
-	addTo->procList().Add(node);
+	addTo->data->procList()->Add(node);
 
 	split_n_merge(addTo);
 	promote();
 }
 
-void dequeue(StackNode* stack)
+void dequeue(LinkedList<StackNode>::Node* stack)
 {
-	ProcNode* deNode = stack->procList().Remove();
+	ProcNode* deNode = stack->data->procList()->Remove();
 
 	if (deNode->leftTime <= 0) delete deNode;
-	//else WQ.Insert(/* ÇÔ¼ö*/,deNode);
-
-	/*
-	if (stack->procList()->nodeCount() == 0)
-	remove stack
-	*/
-
+	else running = deNode;
+	
+	if (stack->data->procList()->NodeCount() == 0)
+	{
+		auto del = stack->data;
+		stack->parent->DeleteRequest(stack);
+		delete del;
+		if (stackList.NodeCount() == 0)
+			return;
+	}
+	
 	promote();
 }
 
 void promote()
 {
-	ProcNode* pNode = P->data->procList().Remove();
+	ProcNode* pNode = P->data->procList()->Remove();
 	LinkedList<StackNode>::Node* check = P;
 	bool isNew = false;
 	if ((P = P->NextNode()) == nullptr)
 	{
-		P->parent->Add(new StackNode());
+		stackList.Add(new StackNode());
 		P = stackList.GetEnd();
 		isNew = true;
 	}
 
-	P->data->procList().Add(pNode);
+	P->data->procList()->Add(pNode);
 	pNode->isPromoted = true;
 
-	/*
-	if (check->procList()->nodeCount() == 0)
-		remove check
-	*/
+	
+	if (check->data->procList()->NodeCount() == 0)
+	{
+		auto del = check->data;
+		check->parent->DeleteRequest(check);
+		delete del;
+	}
+	
 
 	if (isNew)
 		P = stackList.GetStart();
 
-	split_n_merge(P->data);
+	split_n_merge(P);
 }
 
 void split_n_merge(LinkedList<StackNode>::Node* stack)
 {
-	int threshold = ProcNode::procCount / StackNode::Count();
+	int threshold = ProcNode::Count() / StackNode::Count();
 	int count;
-	if ((count = stack->data->procList().NodeCount()) <= threshold)
+	if ((count = stack->data->procList()->NodeCount()) <= threshold)
 		return;
 
-	LinkedList<ProcNode>::Node* moveNode = stack->data->procList().Remove(count / 2);
+	LinkedList<ProcNode>::Node* moveNode = stack->data->procList()->Remove(count / 2);
 
 	LinkedList<StackNode>::Node* check = stack;
 
 	if ((stack = stack->NextNode()) == nullptr)
 	{
 		stackList.Add(new StackNode());
+		stack = stackList.GetEnd();
 	}
 
-	/*
-	if (check->data->procList().NodeCount() == 0)
-	remove check
-	*/
+	
+	if (check->data->procList()->NodeCount() == 0)
+	{
+		auto del = check->data;
+		check->parent->DeleteRequest(check);
+		delete del;
+	}
+	
 
-	stack->data->procList().Add(moveNode);
+	stack->data->procList()->Add(moveNode);
 
 	split_n_merge(stack);
 }
+#pragma endregion Dynamic_Queueing
 
+#pragma region commandFunc
 void shell(ProcNode* proc)
 {
 	string line;
@@ -476,7 +524,7 @@ void monitor(ProcNode* proc)
 	{
 		cout << (P == stack ? "P => [" : "     [");
 
-		for (ProcNode* proc = stack->data->procList().GetStart()->data; proc != nullptr; proc = proc->next)
+		for (ProcNode* proc = stack->data->procList()->GetStart()->data; proc != nullptr; proc = proc->next)
 		{
 			cout << (proc->isPromoted ? "*" : "")
 				<< proc->id
@@ -623,6 +671,7 @@ void sumTh(int start, int end, int* result)
 	*result += value;
 	sumMtx.unlock();
 }
+#pragma endregion commandFunc
 
 char** parse(const char* command)
 {
@@ -757,37 +806,30 @@ void make(vector<string> args)
 
 	for (int i = 0; i < n; i++)
 	{
-		ProcNode* newProc = new ProcNode(id++, sec);
-
-		newProc->type = type;
+		ProcNode* newProc = new ProcNode(id++, type, d, p, sec);
 
 		switch (proc)
 		{
 		case processList::echo:
-			newProc->func = (void(*)())echo;
+			newProc->func = echo;
 			break;
 		case processList::dummy:
 			newProc->func = nullptr;
 			break;
 		case processList::gcd:
-			newProc->func = (void(*)())gcd;
+			newProc->func = gcd;
 			break;
 		case processList::prime:
-			newProc->func = (void(*)())prime;
+			newProc->func = prime;
 			break;
 		case processList::sum:
-			newProc->func = (void(*)())sum;
-			break;
-		default:
+			newProc->func = sum;
 			break;
 		}
-		newProc->leftTime = d;
-		newProc->period = p;
 
 		newProc->args = _args;
 
 		enqueue(newProc);
-		makeTh(newProc);
 	}
 
 }
