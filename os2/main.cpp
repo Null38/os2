@@ -1,14 +1,14 @@
 /*
-2-1    
+2-1
 	1) O
-	2) 
+	2)
 	3) O
 	4) O
-	5) 
+	5)
 
-2-2    
-	1) 
-	2) 
+2-2
+	1)
+	2)
 	3) O
 	4) O
 
@@ -44,15 +44,17 @@ enum class processType
 	Foreground, Background
 };
 
-class StakNode;
-class ProcList;
+template<typename T>
+class LinkedList;
+class StackNode;
 struct ProcNode;
 
+void init();
 void scheduler();
 void enqueue(ProcNode*);
-void dequeue(StakNode*);
+void dequeue(StackNode*);
 void promote();
-void split_n_merge(StakNode*);
+void split_n_merge(StackNode*);
 void shell(ProcNode*);
 void monitor(ProcNode*);
 void echo(ProcNode*);
@@ -68,13 +70,13 @@ void makeTh(ProcNode*);
 
 #pragma region LinkedList
 template<typename T>
-class LinkedList 
+class LinkedList
 {
 public:
 	struct Node;
 	LinkedList();
-	T* GetStart();
-	T* GetEnd();
+	Node* GetStart();
+	Node* GetEnd();
 	void Add(T* data);
 	void Add(Node* node);
 	int NodeCount() { return nodeCount; }
@@ -87,25 +89,43 @@ private:
 	int nodeCount = 0;
 };
 
+
+#pragma region Node
 template<typename T>
 struct LinkedList<T>::Node
 {
+	LinkedList<T>* parent;
+
 	T* data;
 
-	Node(T* data)
-	{
-		this->data = data;
-		nodeCount++;
-	}
+	Node(LinkedList<T>*, T*);
+	~Node();
 
-	~Node()
-	{
-		nodeCount--;
-	}
-
+	Node* NextNode();
 private:
 	Node* next = nullptr;
 };
+
+template<typename T>
+LinkedList<T>::Node::Node(LinkedList<T>* parent, T* data)
+{
+	this->parent = parent;
+	this->data = data;
+	nodeCount++;
+}
+
+template<typename T>
+LinkedList<T>::Node::~Node()
+{
+	nodeCount--;
+}
+
+template<typename T>
+LinkedList<T>::Node* LinkedList<T>::Node::NextNode()
+{
+	return nullptr;
+}
+#pragma endregion Node
 
 template<typename T>
 LinkedList<T>::LinkedList()
@@ -115,13 +135,13 @@ LinkedList<T>::LinkedList()
 }
 
 template<typename T>
-T* LinkedList<T>::GetStart()
+LinkedList<T>::Node* LinkedList<T>::GetStart()
 {
 	return start->data;
 }
 
 template<typename T>
-T* LinkedList<T>::GetEnd()
+LinkedList<T>::Node* LinkedList<T>::GetEnd()
 {
 	return end->data;
 }
@@ -139,7 +159,7 @@ void LinkedList<T>::Add(T* data)
 }
 
 template<typename T>
-void LinkedList<T>::Add(Node* node) 
+void LinkedList<T>::Add(Node* node)
 {
 	if (!start)
 		start = node;
@@ -155,20 +175,20 @@ void LinkedList<T>::Add(Node* node)
 }
 
 template<typename T>
-T* LinkedList<T>::Remove() 
+T* LinkedList<T>::Remove()
 {
-	if (start == nullptr) 
-		return nullptr; 
+	if (start == nullptr)
+		return nullptr;
 
 	Node* temp = start;
-	start = start->next; 
+	start = start->next;
 
-	T* data = temp->data; 
-	delete temp; 
+	T* data = temp->data;
+	delete temp;
 
 	nodeCount--;
 
-	return data; 
+	return data;
 }
 
 template<typename T>
@@ -194,7 +214,7 @@ typename LinkedList<T>::Node* LinkedList<T>::Remove(int size)
 
 	if (start == nullptr)
 		end = nullptr;
-	
+
 	return data;
 }
 
@@ -235,99 +255,45 @@ void LinkedList<T>::insert(int (*compareFunc)(T*), T* data)
 }
 #pragma endregion LinkedList
 
-
-class StakNode
+#pragma region stackNode
+struct StackNode
 {
 public:
-	StakNode(StakNode*);
-	~StakNode();
+	StackNode();
+	~StackNode();
 
 	static int Count();
-	ProcList* procList();
-
-	StakNode* NextNode();
+	LinkedList<ProcNode> procList();
 
 private:
 	static int nodeSize;
 
-	ProcList* _procList;
-
-	StakNode* prev;
-	StakNode* next = nullptr;
+	LinkedList<ProcNode> _procList;
 };
-int StakNode::nodeSize = 0;
+int StackNode::nodeSize = 0;
 
-class ProcList
+StackNode::StackNode()
 {
-public:
-	ProcList(StakNode*);
-	~ProcList();
-
-	static int ProcCount();
-	int nodeCount();
-
-	void Add(ProcNode*);
-	ProcNode* Remove();
-	ProcNode* Remove(int);
-	void Insert(ProcNode*);
-	ProcNode* GetStartInfo();
-
-
-private:
-	static int procCount;
-	int _nodeCount;
-	StakNode* parent;
-	ProcNode* start;
-	ProcNode* end;
-};
-int ProcList::procCount = 0;
-
-#pragma region StakNode
-
-StakNode::StakNode(StakNode* prev)
-{
-	_procList = new ProcList(this);
-	this->prev = prev;
-	if (prev != nullptr)
-	{
-		this->next = prev->next;
-		prev->next = this;
-	}
-	if (this->next != nullptr)
-		this->next->prev = this;
 	nodeSize++;
 }
 
-StakNode::~StakNode()
+StackNode::~StackNode()
 {
-	if (prev != nullptr) prev->next = next;
-	if (next != nullptr) next->prev = prev;
 	nodeSize--;
-	
-	delete _procList;
 }
 
-int StakNode::Count()
+int StackNode::Count()
 {
 	return nodeSize;
 }
 
-
-ProcList* StakNode::procList()
-{
-	return _procList;
-}
-
-StakNode* StakNode::NextNode()
-{
-	return next;
-}
-
-#pragma endregion StakNode
+#pragma endregion stackNode
 
 #pragma region ProcNode
 struct ProcNode
 {
+	static int procCount;
+
 	int id;
 	void (*func)() = nullptr;
 	processType type = processType::Foreground;
@@ -346,107 +312,7 @@ struct ProcNode
 	}
 };
 
-
-ProcList::ProcList(StakNode* parent)
-{
-	this->parent = parent;
-	this->start = nullptr;
-	this->end = nullptr;
-	_nodeCount = 0;
-
-}
-
-ProcList::~ProcList()
-{
-	_nodeCount--;
-}
-	
-int ProcList::ProcCount()
-{
-	return procCount;
-}
-
-int ProcList::nodeCount()
-{
-	return _nodeCount;
-}
-
-void ProcList::Add(ProcNode* newNode)
-{
-	if (end != nullptr)
-		end->next = newNode;
-	else
-		start = newNode;
-	end = newNode;
-
-	_nodeCount++;
-	procCount++;
-
-	for (; end->next != nullptr; end = end->next)
-	{
-		_nodeCount++;
-		procCount++;
-	}
-}
-
-ProcNode* ProcList::Remove()
-{
-	ProcNode* removed = start;
-	start = start->next;
-	if (start == nullptr)
-		end = nullptr;
-	_nodeCount--;
-	procCount--;
-	removed->next = nullptr;
-
-	return removed;
-}
-
-
-ProcNode* ProcList::Remove(int size)
-{
-	ProcNode* removed = start;
-	for (int i = 0; i < size - 1; i++)
-	{
-		start = start->next;
-		_nodeCount--;
-		procCount--;
-	}
-	ProcNode* end = start;
-	if (start != nullptr)
-		start = start->next;
-	else
-		this->end = nullptr;
-	if (end != nullptr)
-		end->next = nullptr;
-	_nodeCount--;
-	procCount--;
-	return removed;
-}
-
-
-void  ProcList::Insert(ProcNode* newNode)
-{
-	/*newNode->leftWait = newNode->period;
-
-	ProcNode* i;
-	for (i = start; i->next != nullptr; i = i->next)
-	{
-		if (i->leftWait >= newNode->leftWait)
-			break;
-	}
-
-	i->next = newNode->next;
-	newNode->next = i;
-
-	_nodeCount++;
-	procCount++;*/
-}
-
-ProcNode* ProcList::GetStartInfo()
-{
-	return start;
-}
+int ProcNode::procCount = 0;
 #pragma endregion ProcNode
 
 
@@ -455,10 +321,9 @@ mutex printMtx;
 int id = 0;
 int sec = 0;
 
-StakNode* stakBottom = new StakNode(nullptr);
-StakNode* stakTop = stakBottom;
-StakNode* P = stakBottom;
-ProcList WQ = ProcList(nullptr);
+LinkedList<StackNode> stackList;
+LinkedList<StackNode>::Node* P;
+LinkedList<ProcNode> WQ;
 ProcNode* running;
 
 ifstream command;
@@ -488,107 +353,101 @@ int main(int argc, char* argv[])
 	return 0;
 }
 
+void init()
+{
+	stackList.Add(new StackNode());
+}
+
 void scheduler()
 {
 	sec++;
-	dequeue(stakTop);
+	dequeue(stackList.GetEnd()->data);
 }
 
 void enqueue(ProcNode* node)
 {
-	StakNode* addTo;
+	StackNode* addTo;
 
 	if (node->type == processType::Foreground)
 	{
-		addTo = stakTop;
+		addTo = stackList.GetEnd()->data;
 	}
 	else
 	{
-		addTo = stakBottom;
+		addTo = stackList.GetStart()->data;
 	}
 
-	addTo->procList()->Add(node);
+	addTo->procList().Add(node);
 
 	split_n_merge(addTo);
 	promote();
 }
 
-void dequeue(StakNode* stak)
+void dequeue(StackNode* stack)
 {
-	ProcNode* deNode = stak->procList()->Remove();
+	ProcNode* deNode = stack->procList().Remove();
 
-	if(deNode->leftTime <= 0) delete deNode;
-	else WQ.Insert(deNode);
+	if (deNode->leftTime <= 0) delete deNode;
+	//else WQ.Insert(/* ÇÔ¼ö*/,deNode);
 
-	if (stak->procList()->nodeCount() == 0)
-	{
-		if (stak == stakBottom)
-			stakBottom = stakBottom->NextNode();
-
-		delete stak;
-	}
+	/*
+	if (stack->procList()->nodeCount() == 0)
+	remove stack
+	*/
 
 	promote();
 }
 
 void promote()
 {
-	ProcNode* pNode =  P->procList()->Remove();
-	StakNode* check = P;
+	ProcNode* pNode = P->data->procList().Remove();
+	LinkedList<StackNode>::Node* check = P;
 	bool isNew = false;
 	if ((P = P->NextNode()) == nullptr)
 	{
-		P = new StakNode(stakTop);
-		stakTop = P;
+		P->parent->Add(new StackNode());
+		P = stackList.GetEnd();
 		isNew = true;
 	}
 
-	P->procList()->Add(pNode);
+	P->data->procList().Add(pNode);
 	pNode->isPromoted = true;
 
+	/*
 	if (check->procList()->nodeCount() == 0)
-	{
-		if (check == stakBottom)
-			stakBottom = stakBottom->NextNode();
-
-		delete check;
-	}
+		remove check
+	*/
 
 	if (isNew)
-		P = stakBottom;
-	
-	split_n_merge(P);
+		P = stackList.GetStart();
+
+	split_n_merge(P->data);
 }
 
-void split_n_merge(StakNode* stak)
+void split_n_merge(LinkedList<StackNode>::Node* stack)
 {
-	int threshold = ProcList::ProcCount() / StakNode::Count();
+	int threshold = ProcNode::procCount / StackNode::Count();
 	int count;
-	if((count = stak->procList()->nodeCount()) <= threshold)
+	if ((count = stack->data->procList().NodeCount()) <= threshold)
 		return;
 
-	ProcNode* moveNode = stak->procList()->Remove(count / 2);
-	
-	StakNode* check = stak;
+	LinkedList<ProcNode>::Node* moveNode = stack->data->procList().Remove(count / 2);
 
-	if ((stak = stak->NextNode()) == nullptr)
+	LinkedList<StackNode>::Node* check = stack;
+
+	if ((stack = stack->NextNode()) == nullptr)
 	{
-		stakTop = new StakNode(stakTop);
-		stak = stakTop;
+		stackList.Add(new StackNode());
 	}
 
+	/*
+	if (check->data->procList().NodeCount() == 0)
+	remove check
+	*/
 
-	if (check->procList()->ProcCount() == 0)
-	{
-		if (check == stakBottom)
-			stakBottom = stakBottom->NextNode();
+	stack->data->procList().Add(moveNode);
 
-		delete check;
-	}
-
-	stak->procList()->Add(moveNode);
-	
-	split_n_merge(stak);
+	split_n_merge(stack);
 }
 
 void shell(ProcNode* proc)
@@ -608,19 +467,19 @@ void monitor(ProcNode* proc)
 {
 	printMtx.lock();
 	cout << "Running: ";
-	
+
 	cout << endl << "---------------------------" << endl;
 
 	cout << "DQ: ";
-	
-	for (StakNode* stak = stakBottom; stak!= nullptr; stak = stak->NextNode())
-	{
-		cout << (P == stak ? "P => [" : "     [" );
 
-		for (ProcNode* proc = stak->procList()->GetStartInfo(); proc != nullptr; proc = proc->next)
+	for (LinkedList<StackNode>::Node* stack = stackList.GetStart(); stack != nullptr; stack = stack->NextNode())
+	{
+		cout << (P == stack ? "P => [" : "     [");
+
+		for (ProcNode* proc = stack->data->procList().GetStart()->data; proc != nullptr; proc = proc->next)
 		{
 			cout << (proc->isPromoted ? "*" : "")
-				<< proc->id 
+				<< proc->id
 				<< (proc->type == processType::Foreground ? "F" : "B")
 				<< (proc->next != nullptr ? " " : "");
 
@@ -629,9 +488,9 @@ void monitor(ProcNode* proc)
 		cout << "]";
 
 		bool isBottom = false, isTop = false;
-		if (stak == stakBottom)
+		if (stack == stackList.GetStart())
 			isBottom = true;
-		if (stak == stakTop)
+		if (stack == stackList.GetEnd())
 			isTop = true;
 
 		cout << (isBottom || isTop ? "(" : "")
@@ -640,13 +499,13 @@ void monitor(ProcNode* proc)
 			<< (isTop ? "top" : "")
 			<< (isBottom || isTop ? ")" : "");
 
-		if (stak != stakTop)
-			cout << endl << "    " ;
+		if (stack != stackList.GetEnd())
+			cout << endl << "    ";
 	}
 
 	cout << endl << "---------------------------" << endl;
 	cout << "WQ: [";
-	for (ProcNode* proc = WQ.GetStartInfo(); proc != nullptr; proc = proc->next)
+	for (ProcNode* proc = WQ.GetStart()->data; proc != nullptr; proc = proc->next)
 	{
 		cout << proc->id
 			<< (proc->type == processType::Foreground ? "F" : "B")
@@ -657,24 +516,24 @@ void monitor(ProcNode* proc)
 	printMtx.unlock();
 }
 
-void echo(ProcNode* proc) 
+void echo(ProcNode* proc)
 {
 	printMtx.lock();
 	cout << proc->args[0] << endl;
 	printMtx.unlock();
 }
 
-void gcd(ProcNode* proc) 
+void gcd(ProcNode* proc)
 {
 	int a = stoi(proc->args[0]), b = stoi(proc->args[1]), result;
-	if (a < b) 
+	if (a < b)
 	{
 		result = a;
 		a = b;
 		b = result;
 	}
 
-	while (true) 
+	while (true)
 	{
 		int r = a % b;
 		if (r == 0) {
@@ -691,7 +550,7 @@ void gcd(ProcNode* proc)
 	printMtx.unlock();
 }
 
-void prime(ProcNode* proc) 
+void prime(ProcNode* proc)
 {
 	int _x = stoi(proc->args[0]);
 
@@ -705,10 +564,10 @@ void prime(ProcNode* proc)
 
 	vector<int> primes = { 2 };
 
-	for (int i = 3; i <= _x; i++) 
+	for (int i = 3; i <= _x; i++)
 	{
 		bool check = true;
-		for (size_t j = 0; j < primes.size(); j++) 
+		for (size_t j = 0; j < primes.size(); j++)
 		{
 			if (i % primes[j] == 0)
 			{
@@ -728,20 +587,20 @@ void prime(ProcNode* proc)
 
 mutex sumMtx;
 
-void sum(ProcNode* proc) 
+void sum(ProcNode* proc)
 {
 	int _x = stoi(proc->args[0]), _m = stoi(proc->args[1]);
 
 	vector<thread*> sumThread;
 	int result = _x;
 
-	for (int i = 0; i < _m; i++) 
+	for (int i = 0; i < _m; i++)
 	{
 		int end = (i + 1 == _m) ? _x : (_x / _m) * (i + 1);
 		sumThread.push_back(new thread(sumTh, (_x / _m) * i, end, &result));
 	}
 
-	for (size_t i = 0; i < sumThread.size(); i++) 
+	for (size_t i = 0; i < sumThread.size(); i++)
 	{
 		sumThread[i]->join();
 	}
@@ -771,7 +630,7 @@ char** parse(const char* command)
 	vector<string> split;
 
 	const int regSize = 4;
-	regex reg[regSize] = { regex("(^\\s+)"), regex("^[^\\w\\d\\s]"), regex("^\\w+") , regex("^.")};
+	regex reg[regSize] = { regex("(^\\s+)"), regex("^[^\\w\\d\\s]"), regex("^\\w+") , regex("^.") };
 
 	while (*cmdPointer != '\0')
 	{
@@ -810,13 +669,13 @@ char** parse(const char* command)
 
 void exec(char** args)
 {
-	char** reader = args; 
+	char** reader = args;
 	vector<string> command;
 	while (strcmp(*reader, "") != 0)
 	{
 		if (strcmp(*reader, ";") == 0)
 		{
-			make(command); 
+			make(command);
 			command.clear();
 		}
 		else
@@ -844,19 +703,19 @@ void make(vector<string> args)
 	if (args[0].compare("&") == 0)
 		type = processType::Background;
 
-	map<string, processList> procMap = { 
+	map<string, processList> procMap = {
 		{"echo", processList::echo},
 		{"dummy", processList::dummy},
 		{"gcd", processList::gcd},
 		{"prime", processList::prime},
 		{"sum", processList::sum}
 	};
-	auto find = procMap.find(args[type == processType::Foreground ? 0 : 1 ]);
+	auto find = procMap.find(args[type == processType::Foreground ? 0 : 1]);
 
 	if (find == procMap.end())
 		return;
 
-	processList proc =	find->second;
+	processList proc = find->second;
 
 	int n = 1, d = DONE, p = -1, m = 1;
 
