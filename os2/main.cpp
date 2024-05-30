@@ -53,17 +53,188 @@ void enqueue(ProcNode*);
 void dequeue(StakNode*);
 void promote();
 void split_n_merge(StakNode*);
-void shell();
-void monitor();
-void echo(string);
-void gcd(string, string);
-void prime(string);
-void sum(string, string);
+void shell(ProcNode*);
+void monitor(ProcNode*);
+void echo(ProcNode*);
+void gcd(ProcNode*);
+void prime(ProcNode*);
+void sum(ProcNode*);
 void sumTh(int, int, int*);
 char** parse(const char*);
 void exec(char**);
 void make(vector<string>);
 void makeTh(ProcNode*);
+
+
+#pragma region LinkedList
+template<typename T>
+class LinkedList 
+{
+public:
+	struct Node;
+	LinkedList();
+	T* GetStart();
+	T* GetEnd();
+	void Add(T* data);
+	void Add(Node* node);
+	int NodeCount() { return nodeCount; }
+	T* Remove();
+	Node* Remove(int index);
+	void insert(int(*)(T*), T*);
+private:
+	Node* start;
+	Node* end;
+	int nodeCount = 0;
+};
+
+template<typename T>
+struct LinkedList<T>::Node
+{
+	T* data;
+
+	Node(T* data)
+	{
+		this->data = data;
+		nodeCount++;
+	}
+
+	~Node()
+	{
+		nodeCount--;
+	}
+
+private:
+	Node* next = nullptr;
+};
+
+template<typename T>
+LinkedList<T>::LinkedList()
+{
+	start = nullptr;
+	end = nullptr;
+}
+
+template<typename T>
+T* LinkedList<T>::GetStart()
+{
+	return start->data;
+}
+
+template<typename T>
+T* LinkedList<T>::GetEnd()
+{
+	return end->data;
+}
+
+template<typename T>
+void LinkedList<T>::Add(T* data)
+{
+	Node* newNode = new Node(data);
+	if (start == nullptr)
+		start = newNode;
+	else
+		end->next = newNode;
+
+	end = newNode;
+}
+
+template<typename T>
+void LinkedList<T>::Add(Node* node) 
+{
+	if (!start)
+		start = node;
+	else
+		end->next = node;
+
+	for (Node* temp = node; temp->next != nullptr; temp = temp->next)
+	{
+		nodeCount++;
+	}
+
+	end = node;
+}
+
+template<typename T>
+T* LinkedList<T>::Remove() 
+{
+	if (start == nullptr) 
+		return nullptr; 
+
+	Node* temp = start;
+	start = start->next; 
+
+	T* data = temp->data; 
+	delete temp; 
+
+	nodeCount--;
+
+	return data; 
+}
+
+template<typename T>
+typename LinkedList<T>::Node* LinkedList<T>::Remove(int size)
+{
+	if (size <= 0 || start == nullptr)
+		return nullptr;
+
+	Node* data = start;
+	Node* dataEnd = data;
+	nodeCount--;
+	for (int i = 1; i < size; i++)
+	{
+		if (dataEnd->next == nullptr)
+			break;
+
+		dataEnd = dataEnd->next;
+		nodeCount--;
+	}
+
+	start = dataEnd->next;
+	dataEnd->next = nullptr;
+
+	if (start == nullptr)
+		end = nullptr;
+	
+	return data;
+}
+
+template<typename T>
+void LinkedList<T>::insert(int (*compareFunc)(T*), T* data)
+{
+	Node* newNode = new Node(data);
+
+	if (start == nullptr)
+	{
+		start = newNode;
+		end = newNode;
+		nodeCount++;
+		return;
+	}
+
+	Node* curr = start;
+	Node* prev = nullptr;
+
+	while (curr != nullptr && compareFunc(newNode) >= compareFunc(curr->data))
+	{
+		prev = curr;
+		curr = curr->next;
+	}
+
+	if (prev == nullptr)
+	{
+		newNode->next = start;
+		start = newNode;
+
+		return;
+	}
+
+	prev->next = newNode;
+	newNode->next = curr;
+	if (curr == nullptr)
+		end = newNode;
+}
+#pragma endregion LinkedList
+
 
 class StakNode
 {
@@ -297,13 +468,13 @@ int main(int argc, char* argv[])
 	command.open("command.txt");
 
 	ProcNode* instProc = new ProcNode(id++, sec);
-	instProc->func = shell;
+	instProc->func = (void(*)())shell;
 	instProc->type = processType::Foreground;
 	instProc->period = Y;
 	enqueue(instProc);
 
 	instProc = new ProcNode(id++, sec);
-	instProc->func = monitor;
+	instProc->func = (void(*)())monitor;
 	instProc->type = processType::Background;
 	instProc->period = X;
 	enqueue(instProc);
@@ -420,7 +591,7 @@ void split_n_merge(StakNode* stak)
 	split_n_merge(stak);
 }
 
-void shell()
+void shell(ProcNode* proc)
 {
 	string line;
 
@@ -433,7 +604,7 @@ void shell()
 	exec(parse(line.c_str()));
 }
 
-void monitor()
+void monitor(ProcNode* proc)
 {
 	printMtx.lock();
 	cout << "Running: ";
@@ -486,24 +657,24 @@ void monitor()
 	printMtx.unlock();
 }
 
-void echo(string output)
+void echo(ProcNode* proc) 
 {
 	printMtx.lock();
-	cout << output << endl;
+	cout << proc->args[0] << endl;
 	printMtx.unlock();
 }
 
-void gcd(string x, string y)
+void gcd(ProcNode* proc) 
 {
-	int a = stoi(x), b = stoi(y), result;
-	if (a < b)
+	int a = stoi(proc->args[0]), b = stoi(proc->args[1]), result;
+	if (a < b) 
 	{
 		result = a;
 		a = b;
 		b = result;
 	}
 
-	while (true)
+	while (true) 
 	{
 		int r = a % b;
 		if (r == 0) {
@@ -520,9 +691,9 @@ void gcd(string x, string y)
 	printMtx.unlock();
 }
 
-void prime(string x)
+void prime(ProcNode* proc) 
 {
-	int _x = stoi(x);
+	int _x = stoi(proc->args[0]);
 
 	if (_x < 2)
 	{
@@ -532,12 +703,12 @@ void prime(string x)
 		return;
 	}
 
-	vector<int> primes = {2};
+	vector<int> primes = { 2 };
 
-	for (int i = 3; i <= _x; i++)
+	for (int i = 3; i <= _x; i++) 
 	{
 		bool check = true;
-		for (size_t j = 0; j < primes.size(); j++)
+		for (size_t j = 0; j < primes.size(); j++) 
 		{
 			if (i % primes[j] == 0)
 			{
@@ -557,20 +728,20 @@ void prime(string x)
 
 mutex sumMtx;
 
-void sum(string x, string m)
+void sum(ProcNode* proc) 
 {
-	int _x = stoi(x), _m = stoi(m);
+	int _x = stoi(proc->args[0]), _m = stoi(proc->args[1]);
 
 	vector<thread*> sumThread;
 	int result = _x;
 
-	for (int i = 0; i < _m; i++)
+	for (int i = 0; i < _m; i++) 
 	{
 		int end = (i + 1 == _m) ? _x : (_x / _m) * (i + 1);
 		sumThread.push_back(new thread(sumTh, (_x / _m) * i, end, &result));
 	}
 
-	for (size_t i = 0; i < sumThread.size(); i++)
+	for (size_t i = 0; i < sumThread.size(); i++) 
 	{
 		sumThread[i]->join();
 	}
