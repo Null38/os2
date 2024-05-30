@@ -1,7 +1,7 @@
 /*
 2-1
 	1) O
-	2)
+	2) O
 	3) O
 	4) O
 	5)
@@ -206,7 +206,6 @@ void LinkedList<T>::Insert(int (*compareFunc)(T*), T* data)
 	{
 		start = newNode;
 		end = newNode;
-		nodeCount++;
 		return;
 	}
 
@@ -291,7 +290,7 @@ struct ProcNode
 	processType type = processType::Foreground;
 	vector<string> args;
 	bool isPromoted = false;
-	int leftTime = DONE;
+	int lifeTime;
 	int startAt;
 	int period = -1;
 	int leftWait = 0;
@@ -299,7 +298,7 @@ struct ProcNode
 
 	ProcNode(int, processType, void (*func)(ProcNode*), int, int);
 	ProcNode(int id, void (*func)(ProcNode*), int period, int startSec) : ProcNode(id, processType::Foreground, func, period, startSec) {}
-	ProcNode(int, processType, int, int, int);//(id++, type, d, p, sec);
+	ProcNode(int, processType, int, int, int);
 	~ProcNode();
 	static int Count() { return procCount; }
 	static int GetLeftTime(ProcNode*);
@@ -309,7 +308,7 @@ private:
 };
 int ProcNode::procCount = 0;
 
-ProcNode::ProcNode(int id, processType type, void(*func)(ProcNode*), int period, int startSec) : ProcNode(id, type, DONE, period, startSec)
+ProcNode::ProcNode(int id, processType type, void(*func)(ProcNode*), int period, int startSec) : ProcNode(id, type, DONE * 10, period, startSec)
 {
 	this->func = func;
 }
@@ -318,6 +317,7 @@ ProcNode::ProcNode(int id, processType type, int lifeTime, int period, int start
 {
 	this->id     = id;
 	this->type   = type;
+	this->lifeTime = lifeTime;
 	this->period = period;
 	startAt = startSec;
 	procCount++;
@@ -330,7 +330,7 @@ ProcNode::~ProcNode()
 
 int ProcNode::GetLeftTime(ProcNode* proc)
 {
-	return proc->leftTime;
+	return proc->leftWait;
 }
 #pragma endregion ProcNode
 
@@ -374,7 +374,7 @@ int main(int argc, char* argv[])
 	enqueue(new ProcNode(id++, shell, Y, sec));
 	enqueue(new ProcNode(id++, processType::Background, monitor, X, sec));
 
-	while (stackList.NodeCount())
+	while (stackList.NodeCount() || WQ.NodeCount())
 	{
 		scheduler();
 	}
@@ -392,8 +392,51 @@ void init()
 void scheduler()
 {
 	sec++;
-	dequeue(stackList.GetEnd());
-	WQ.Insert(&ProcNode::GetLeftTime, running);
+	LinkedList<ProcNode>::Node* temp = WQ.GetStart();
+	while (temp != nullptr)
+	{
+		if (temp->data->startAt + temp->data->lifeTime - sec < 0)
+		{
+			auto del = temp->data;
+			temp->parent->DeleteRequest(temp);
+			delete del;
+
+			if (ProcNode::Count() == 0)
+			{
+				auto stack = stackList.GetStart();
+				auto del = stack->data;
+				stack->parent->DeleteRequest(stack);
+				delete del;
+
+				if (ProcNode::Count() == 0)
+					return;
+			}
+
+			temp = WQ.GetStart();
+			continue;
+		}
+
+		temp->data->leftWait--;
+
+		if (temp->data->leftWait == 0)
+		{
+			enqueue(WQ.Remove());
+			temp = WQ.GetStart();
+			continue;
+		}
+
+		temp = temp->NextNode();
+	}
+	if (stackList.GetStart()->data->procList()->NodeCount() != 0)
+		dequeue(stackList.GetEnd());
+
+
+	if (running != nullptr)
+	{
+		running->leftWait = running->period;
+		WQ.Insert(&ProcNode::GetLeftTime, running);
+		running = nullptr;
+	}
 }
 
 #pragma region Dynamic_Queueing
@@ -420,15 +463,19 @@ void dequeue(LinkedList<StackNode>::Node* stack)
 {
 	ProcNode* deNode = stack->data->procList()->Remove();
 
-	if (deNode->leftTime <= 0) delete deNode;
+	if (deNode->startAt + deNode->lifeTime - sec <= 0) delete deNode;
 	else running = deNode;
 	
 	if (stack->data->procList()->NodeCount() == 0)
 	{
+		if (stackList.NodeCount() == 1 && ProcNode::Count() != 0)
+			return;
+
 		auto del = stack->data;
 		stack->parent->DeleteRequest(stack);
 		delete del;
-		if (stackList.NodeCount() == 0)
+
+		if (ProcNode::Count() == 0)
 			return;
 	}
 	
@@ -556,9 +603,9 @@ void monitor(ProcNode* proc)
 	for (ProcNode* proc = WQ.GetStart()->data; proc != nullptr; proc = proc->next)
 	{
 		cout << proc->id
-			<< (proc->type == processType::Foreground ? "F" : "B")
+			<< (proc->type == processType::Foreground ? "F:" : "B:") 
+			<< proc->leftWait
 			<< (proc->next != nullptr ? " " : "");
-		//  << leftTime
 	}
 	cout << "]" << endl;
 	printMtx.unlock();
