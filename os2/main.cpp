@@ -297,10 +297,13 @@ struct ProcNode
 	int startAt;
 	int period;
 	int leftWait = 0;
+
 	ProcNode(int, processType, void (*func)(ProcInfo*), int, int, int);
-	ProcNode(int id, void (*func)(ProcInfo*), int lifeTime, int period, int startSec) : ProcNode(id, processType::Foreground, func, lifeTime, period, startSec) {}
+	ProcNode(int id, void (*func)(ProcInfo*), int lifeTime, int period, int startSec)
+		: ProcNode(id, processType::Foreground, func, lifeTime, period, startSec) {}
 	ProcNode(int, processType, int, int, int);
 	~ProcNode();
+
 	static int Count() { return procCount; }
 	static int GetLeftTime(ProcNode*);
 
@@ -309,18 +312,17 @@ private:
 };
 int ProcNode::procCount = 0;
 
-ProcNode::ProcNode(int id, processType type, void(*func)(ProcInfo*), int lifeTime, int period, int startSec) : ProcNode(id, type, lifeTime, period, startSec)
+ProcNode::ProcNode(int id, processType type, void (*func)(ProcInfo*), int lifeTime, int period, int startSec)
+	: ProcNode(id, type, lifeTime, period, startSec)
 {
 	this->info.func = func;
 }
 
 ProcNode::ProcNode(int id, processType type, int lifeTime, int period, int startSec)
+	: lifeTime(lifeTime), period(period), startAt(startSec)
 {
-	info.id        = id;
-	info.type      = type;
-	this->lifeTime = lifeTime;
-	this->period   = period;
-	startAt        = startSec;
+	info.id   = id;
+	info.type = type;
 	procCount++;
 }
 
@@ -339,7 +341,7 @@ int ProcNode::GetLeftTime(ProcNode* proc)
 void Init();
 void scheduler();
 void enqueue(ProcNode*);
-void dequeue(LinkedList<StackNode>::Node*);
+void dequeue();
 void promote();
 void split_n_merge(LinkedList<StackNode>::Node*);
 void shell(ProcNode::ProcInfo*);
@@ -447,7 +449,7 @@ void scheduler()
 	if (stackList.GetBottom()->data->procList()->NodeCount() != 0)
 	{
 		qeueuMtx.lock();
-		dequeue(stackList.GetTop());
+		dequeue();
 		if (stackList.NodeCount() == 0)
 			return;
 
@@ -471,6 +473,9 @@ void scheduler()
 #pragma region Dynamic_Queueing
 void enqueue(ProcNode* node)
 {
+	if (!node)
+		return;
+
 	LinkedList<StackNode>::Node* addTo;
 
 	if (node->info.type == processType::Foreground)
@@ -488,60 +493,65 @@ void enqueue(ProcNode* node)
 	promote();
 }
 
-void dequeue(LinkedList<StackNode>::Node* stack)
+void dequeue()
 {
-	ProcNode* deNode = stack->data->procList()->Remove();
+	auto top = stackList.GetTop();
+
+	ProcNode* deNode = top->data->procList()->Remove();
 	if (deNode == nullptr)
 		return;
 
 	if (deNode->startAt + deNode->lifeTime - sec <= 0) delete deNode;
 	else running = deNode;
 	
-	if (stack->data->procList()->NodeCount() == 0)
+	if (top->data->procList()->NodeCount() == 0
+		&& stackList.NodeCount() <= 1 && ProcNode::Count() != 0)
 	{
-		if (stackList.NodeCount() == 1 && ProcNode::Count() != 0)
-			return;
-
-		auto del = stack->data;
-		stack->parent->DeleteRequest(stack);
+		auto del = top->data;
+		top->parent->DeleteRequest(top);
 		delete del;
-
-		if (ProcNode::Count() == 0)
-			return;
 	}
-	
+
+	if (ProcNode::Count() == 0)
+		return;
 	promote();
 }
 
 void promote()
 {
-	ProcNode* pNode = P->data->procList()->Remove();
-	if (pNode == nullptr)
-		return;
+	LinkedList<StackNode>::Node* pNext;
+	LinkedList<StackNode>::Node* nextStack;
 
-	LinkedList<StackNode>::Node* check = P;
-	bool isNew = false;
-	if ((P = P->NextNode()) == nullptr)
+	if (!P->NextNode())
 	{
+		if (P->data->procList()->NodeCount() <= 1)
+		{
+			P = stackList.GetBottom();
+			return;
+		}
 		stackList.Add(new StackNode());
-		P = stackList.GetTop();
-		isNew = true;
+		nextStack = stackList.GetTop();
+		pNext = stackList.GetBottom();
+	}
+	else
+	{
+		nextStack = P->NextNode();
+		pNext = P->NextNode();
 	}
 
-	P->data->procList()->Add(pNode);
-	pNode->isPromoted = true;
+	ProcNode* promoteNode = P->data->procList()->Remove();
 
-	
-	if (check->data->procList()->NodeCount() == 0)
+	nextStack->data->procList()->Add(promoteNode);
+	promoteNode->isPromoted = true;
+
+	if (P->data->procList()->NodeCount() == 0)
 	{
-		auto del = check->data;
-		check->parent->DeleteRequest(check);
+		auto del = P->data;
+		P->parent->DeleteRequest(P);
 		delete del;
 	}
-	
 
-	if (isNew)
-		P = stackList.GetBottom();
+	P = pNext;
 
 	split_n_merge(P);
 }
@@ -553,31 +563,30 @@ void split_n_merge(LinkedList<StackNode>::Node* stack)
 	if (count <= threshold)
 		return;
 
-	LinkedList<ProcNode>::Node* moveNode = stack->data->procList()->Remove(count / 2);
-
-	LinkedList<StackNode>::Node* check = stack;
-
-	if ((stack = stack->NextNode()) == nullptr)
+	LinkedList<StackNode>::Node* nextStack;
+	if (!stack->NextNode())
 	{
 		stackList.Add(new StackNode());
-		stack = stackList.GetTop();
+		nextStack = stackList.GetTop();
+	}
+	else
+	{
+		nextStack = stack->NextNode();
 	}
 
-	stack->data->procList()->Add(moveNode);
+	stack->data->procList()->Add(stack->data->procList()->Remove(count / 2));
 
-	if (check->data->procList()->NodeCount() == 0)
+	if (stack->data->procList()->NodeCount() == 0)
 	{
-		auto del = check->data;
-		check->parent->DeleteRequest(check);
+		auto del = stack->data;
+		stack->parent->DeleteRequest(stack);
 		delete del;
 	}
 	
 
-	split_n_merge(stack);
+	split_n_merge(nextStack);
 }
 #pragma endregion Dynamic_Queueing
-
-
 
 #pragma region commandFunc
 void shell(ProcNode::ProcInfo* proc)
