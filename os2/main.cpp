@@ -56,8 +56,8 @@ class LinkedList
 public:
 	struct Node;
 	LinkedList();
-	Node* GetStart() { return start; }
-	Node* GetEnd() { return end; }
+	Node* GetBottom() { return bottom; }
+	Node* GetTop() { return top; }
 	int NodeCount() { return nodeCount; }
 
 	void Add(T* data);
@@ -67,8 +67,8 @@ public:
 	void Insert(int (*compareFunc)(T*), T*);
 	void DeleteRequest(Node*);
 private:
-	Node* start;
-	Node* end;
+	Node* bottom;
+	Node* top;
 	int nodeCount = 0;
 };
 
@@ -93,9 +93,8 @@ protected:
 
 template<typename T>
 LinkedList<T>::Node::Node(LinkedList<T>* parent, T* data)
+	: parent(parent), data(data)
 {
-	this->parent = parent;
-	this->data = data;
 	parent->nodeCount++;
 }
 
@@ -107,61 +106,59 @@ LinkedList<T>::Node::~Node()
 #pragma endregion Node
 
 template<typename T>
-LinkedList<T>::LinkedList()
-{
-	start = nullptr;
-	end = nullptr;
-}
+LinkedList<T>::LinkedList() : bottom(nullptr), top(nullptr) {}
 
 template<typename T>
 void LinkedList<T>::Add(T* data)
 {
 	Node* newNode = new Node(this, data);
-	if (start == nullptr)
-		start = newNode;
+	if (!bottom)
+		bottom = newNode;
 	else
 	{
-		newNode->prev = end;
-		end->next = newNode;
+		newNode->prev = top;
+		top->next = newNode;
 	}
 
-	end = newNode;
+	top = newNode;
 }
 
 template<typename T>
-void LinkedList<T>::Add(Node* node)
+void LinkedList<T>::Add(Node* newNode)
 {
-	if (node == nullptr)
+	if (!newNode)
 		return;
 
-	if (!start)
-		start = node;
+	if (!bottom)
+		bottom = newNode;
 	else
 	{
-		node->prev = end;
-		end->next = node;
+		newNode->prev = top;
+		top->next = newNode;
 	}
 	nodeCount++;
-	node->parent = this;
-	for (Node* temp = node; temp->next != nullptr; temp = temp->next)
+	newNode->parent = this;
+
+	Node* temp;
+	for (temp = newNode; temp->next; temp = temp->next)
 	{
 		nodeCount++;
 		temp->parent = this;
 	}
 
-	end = node;
+	top = temp;
 }
 
 template<typename T>
 T* LinkedList<T>::Remove()
 {
-	if (start == nullptr)
+	if (!bottom)
 		return nullptr;
 
-	Node* temp = start;
-	start = start->next;
-	if (start != nullptr)
-		start->prev = nullptr;
+	Node* temp = bottom;
+	bottom = bottom->next;
+	if (bottom)
+		bottom->prev = nullptr;
 
 	T* data = temp->data;
 	delete temp;
@@ -172,30 +169,29 @@ T* LinkedList<T>::Remove()
 template<typename T>
 typename LinkedList<T>::Node* LinkedList<T>::Remove(int size)
 {
-	if (size <= 0 || start == nullptr)
+	if (size <= 0 || !bottom)
 		return nullptr;
 
-	Node* data = start;
-	Node* dataEnd = data;
+	Node* data = bottom;
+	Node* temp = data;
 	nodeCount--;
-	for (int i = 1; i < size; i++)
+	temp->parent = nullptr;
+	for (int i = 1; i < size && temp->next; i++)
 	{
-		if (dataEnd->next == nullptr)
-			break;
-
-		dataEnd = dataEnd->next;
 		nodeCount--;
+		temp->parent = nullptr;
+		temp = temp->next;
 	}
 
-	start = dataEnd->next;
-	if (start)
-		start->prev = nullptr;
+	bottom = temp->next;
+	if (bottom)
+		bottom->prev = nullptr;
 
 	data->prev = nullptr;
-	dataEnd->next = nullptr;
+	temp->next = nullptr;
 
-	if (start == nullptr)
-		end = nullptr;
+	if (!bottom)
+		top = nullptr;
 
 	return data;
 }
@@ -205,51 +201,50 @@ void LinkedList<T>::Insert(int (*compareFunc)(T*), T* data)
 {
 	Node* newNode = new Node(this, data);
 
-	if (start == nullptr)
+	if (!bottom)
 	{
-		start = newNode;
-		end = newNode;
+		bottom = newNode;
+		top = newNode;
 		return;
 	}
 
-	Node* curr = start;
+	Node* curr = bottom;
 	Node* prev = nullptr;
 
-	while (curr != nullptr && compareFunc(newNode->data) >= compareFunc(curr->data))
+	while (curr && compareFunc(newNode->data) >= compareFunc(curr->data))
 	{
 		prev = curr;
 		curr = curr->next;
 	}
 
-	if (prev == nullptr)
+	if (!prev)
 	{
-		newNode->next = start;
-		start->prev = newNode;
-		start = newNode;
-
+		newNode->next = bottom;
+		bottom->prev = newNode;
+		bottom = newNode;
 		return;
 	}
 
 	prev->next = newNode;
 	newNode->prev = prev;
 	newNode->next = curr;
-	if (curr == nullptr)
-		end = newNode;
+	if (!curr)
+		top = newNode;
 }
 
 template<typename T>
 void LinkedList<T>::DeleteRequest(Node* node)
 {
-	if (node == nullptr)
+	if (!node)
 		return;
 
-	if (node->prev == nullptr)
-		start = node->next;
+	if (!node->prev)
+		bottom = node->next;
 	else
 		node->prev->next = node->next;
 
-	if (node->next == nullptr)
-		end = node->prev;
+	if (!node->next)
+		top = node->prev;
 	else
 		node->next->prev = node->prev;
 
@@ -407,13 +402,13 @@ int main(int argc, char* argv[])
 void Init()
 {
 	stackList.Add(new StackNode());
-	P = stackList.GetEnd();
+	P = stackList.GetTop();
 }
 
 void scheduler()
 {
 	sec++;
-	LinkedList<ProcNode>::Node* temp = WQ.GetStart();
+	LinkedList<ProcNode>::Node* temp = WQ.GetBottom();
 	while (temp != nullptr)
 	{
 		if (temp->data->startAt + temp->data->lifeTime - sec < 0)
@@ -424,7 +419,7 @@ void scheduler()
 
 			if (ProcNode::Count() == 0)
 			{
-				auto stack = stackList.GetStart();
+				auto stack = stackList.GetBottom();
 				auto del = stack->data;
 				stack->parent->DeleteRequest(stack);
 				delete del;
@@ -433,7 +428,7 @@ void scheduler()
 					return;
 			}
 
-			temp = WQ.GetStart();
+			temp = WQ.GetBottom();
 			continue;
 		}
 		temp->data->leftWait--;
@@ -443,16 +438,16 @@ void scheduler()
 			qeueuMtx.lock();
 			enqueue(WQ.Remove());
 			qeueuMtx.unlock();
-			temp = WQ.GetStart();
+			temp = WQ.GetBottom();
 			continue;
 		}
 
 		temp = temp->NextNode();
 	}
-	if (stackList.GetStart()->data->procList()->NodeCount() != 0)
+	if (stackList.GetBottom()->data->procList()->NodeCount() != 0)
 	{
 		qeueuMtx.lock();
-		dequeue(stackList.GetEnd());
+		dequeue(stackList.GetTop());
 		if (stackList.NodeCount() == 0)
 			return;
 
@@ -480,11 +475,11 @@ void enqueue(ProcNode* node)
 
 	if (node->info.type == processType::Foreground)
 	{
-		addTo = stackList.GetEnd();
+		addTo = stackList.GetTop();
 	}
 	else
 	{
-		addTo = stackList.GetStart();
+		addTo = stackList.GetBottom();
 	}
 
 	addTo->data->procList()->Add(node);
@@ -529,7 +524,7 @@ void promote()
 	if ((P = P->NextNode()) == nullptr)
 	{
 		stackList.Add(new StackNode());
-		P = stackList.GetEnd();
+		P = stackList.GetTop();
 		isNew = true;
 	}
 
@@ -546,7 +541,7 @@ void promote()
 	
 
 	if (isNew)
-		P = stackList.GetStart();
+		P = stackList.GetBottom();
 
 	split_n_merge(P);
 }
@@ -565,7 +560,7 @@ void split_n_merge(LinkedList<StackNode>::Node* stack)
 	if ((stack = stack->NextNode()) == nullptr)
 	{
 		stackList.Add(new StackNode());
-		stack = stackList.GetEnd();
+		stack = stackList.GetTop();
 	}
 
 	stack->data->procList()->Add(moveNode);
@@ -613,11 +608,11 @@ void monitor(ProcNode::ProcInfo* proc)
 
 	cout << "DQ: ";
 
-	for (LinkedList<StackNode>::Node* stack = stackList.GetStart(); stack != nullptr; stack = stack->NextNode())
+	for (LinkedList<StackNode>::Node* stack = stackList.GetBottom(); stack != nullptr; stack = stack->NextNode())
 	{
 		cout << (P == stack ? "P => [" : "     [");
 
-		for (auto temp = stack->data->procList()->GetStart(); temp != nullptr; temp = temp->NextNode())
+		for (auto temp = stack->data->procList()->GetBottom(); temp != nullptr; temp = temp->NextNode())
 		{
 			cout << (temp->data->isPromoted ? "*" : "")
 				<< temp->data->info.id
@@ -629,9 +624,9 @@ void monitor(ProcNode::ProcInfo* proc)
 		cout << "]";
 
 		bool isBottom = false, isTop = false;
-		if (stack == stackList.GetStart())
+		if (stack == stackList.GetBottom())
 			isBottom = true;
-		if (stack == stackList.GetEnd())
+		if (stack == stackList.GetTop())
 			isTop = true;
 
 		cout << (isBottom || isTop ? "(" : "")
@@ -640,13 +635,13 @@ void monitor(ProcNode::ProcInfo* proc)
 			<< (isTop ? "top" : "")
 			<< (isBottom || isTop ? ")" : "");
 
-		if (stack != stackList.GetEnd())
+		if (stack != stackList.GetTop())
 			cout << endl << "    ";
 	}
 
 	cout << endl << "---------------------------" << endl;
 	cout << "WQ: [";
-	for (auto temp = WQ.GetStart(); temp != nullptr; temp = temp->NextNode())
+	for (auto temp = WQ.GetBottom(); temp != nullptr; temp = temp->NextNode())
 	{
 		cout << temp->data->info.id
 			<< (temp->data->info.type == processType::Foreground ? "F:" : "B:")
